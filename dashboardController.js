@@ -1,4 +1,4 @@
-// controllers/dashboardController.js - ФИНАЛЬНО ПРАВИЛЬНАЯ версия с точными статусами из API
+// controllers/dashboardController.js - ИСПРАВЛЕННАЯ версия с правильным подсчетом лидов
 const LeadSource = require('../models/LeadSource');
 const bitrixService = require('../bitrix/bitrixService');
 const { format, parseISO, isValid } = require('date-fns');
@@ -239,12 +239,12 @@ function calculateStageAnalysis(leads) {
 }
 
 /**
- * Получение аналитики лидов с ТОЧНОЙ логикой
+ * Получение аналитики лидов с ИСПРАВЛЕННОЙ логикой подсчета
  */
 async function getLeadsAnalytics(req, res) {
   try {
     const startTime = Date.now();
-    console.log('📊 Запрос аналитики лидов с точными статусами из API');
+    console.log('📊 Запрос аналитики лидов с ПРАВИЛЬНЫМ подсчетом');
     
     // Получаем параметры
     const { period = 'week', sourceId, startDate, endDate } = req.query;
@@ -276,6 +276,16 @@ async function getLeadsAnalytics(req, res) {
     const leads = await bitrixService.getLeads(filters);
     console.log(`📥 Получено лидов: ${leads.length}`);
     
+    // ДОБАВЛЯЕМ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
+    console.log('🔍 Проверка SOURCE_ID в лидах:');
+    const sourceStats = {};
+    leads.forEach(lead => {
+      const sourceId = lead.SOURCE_ID || 'NO_SOURCE';
+      sourceStats[sourceId] = (sourceStats[sourceId] || 0) + 1;
+    });
+    console.log('📊 Распределение по источникам:', sourceStats);
+    console.log(`❓ Лидов без источника: ${sourceStats['NO_SOURCE'] || 0}`);
+    
     if (leads.length === 0) {
       return res.json({
         success: true,
@@ -287,9 +297,16 @@ async function getLeadsAnalytics(req, res) {
       });
     }
     
-    // Группируем лиды по источникам
+    // Группируем лиды по источникам (ИСПРАВЛЕНО)
     const leadsBySource = groupLeadsBySource(leads);
     console.log(`📊 Источников с лидами: ${Object.keys(leadsBySource).length}`);
+    
+    // ПРОВЕРКА ЦЕЛОСТНОСТИ ДАННЫХ
+    const totalLeadsCheck = Object.values(leadsBySource).reduce((sum, leads) => sum + leads.length, 0);
+    console.log(`✅ Проверка: получено ${leads.length} лидов, сгруппировано ${totalLeadsCheck} лидов`);
+    if (leads.length !== totalLeadsCheck) {
+      console.error(`❌ ПОТЕРЯ ДАННЫХ: ${leads.length - totalLeadsCheck} лидов потеряно при группировке!`);
+    }
     
     // Получаем сделки для подсчета встреч
     const deals = await bitrixService.getDeals({ CATEGORY_ID: '31' });
@@ -297,7 +314,9 @@ async function getLeadsAnalytics(req, res) {
     
     // Анализируем каждый источник
     const sourceAnalytics = [];
-    let totalLeads = 0;
+    
+    // ИСПРАВЛЕНО: считаем totalLeads просто как длину массива!
+    const totalLeads = leads.length; // ← ВОТ ГЛАВНОЕ ИЗМЕНЕНИЕ!
     let totalMeetingsHeld = 0;
     
     for (const [sourceId, sourceLeads] of Object.entries(leadsBySource)) {
@@ -351,7 +370,6 @@ async function getLeadsAnalytics(req, res) {
       };
       
       sourceAnalytics.push(analytics);
-      totalLeads += sourceLeads.length;
       totalMeetingsHeld += meetingsHeld;
       
       console.log(`📊 ИТОГОВЫЕ МЕТРИКИ для "${analytics.sourceName}":
@@ -366,13 +384,14 @@ async function getLeadsAnalytics(req, res) {
     }
     
     const processingTime = Date.now() - startTime;
-    console.log(`✅ Аналитика обработана за ${processingTime}ms, записей: ${sourceAnalytics.length}`);
+    console.log(`✅ Аналитика обработана за ${processingTime}ms`);
+    console.log(`📊 ИТОГО ПО ВСЕМ ИСТОЧНИКАМ: ${totalLeads} лидов (должно быть 229)`);
     
     res.json({
       success: true,
       data: sourceAnalytics,
       period: dateRange,
-      totalLeads,
+      totalLeads, // ← теперь это просто leads.length
       totalMeetingsHeld,
       processingTime,
       note: sourceId ? `Источник: ${sourceId}` : 'Все источники',
@@ -382,6 +401,9 @@ async function getLeadsAnalytics(req, res) {
         actualPeriod: period,
         dateRange,
         contractFunnelId: '31',
+        totalLeadsReceived: leads.length, // для проверки
+        totalLeadsCounted: totalLeads,    // должны совпадать
+        leadsWithoutSource: sourceStats['NO_SOURCE'] || 0,
         sampleLeads: leads.slice(0, 3).map(lead => ({
           id: lead.ID,
           sourceId: lead.SOURCE_ID,
@@ -409,13 +431,13 @@ async function getLeadsAnalytics(req, res) {
 }
 
 /**
- * Группировка лидов по источникам
+ * Группировка лидов по источникам (ИСПРАВЛЕНО)
  */
 function groupLeadsBySource(leads) {
   const grouped = {};
   
   leads.forEach(lead => {
-    const sourceId = lead.SOURCE_ID;
+    const sourceId = lead.SOURCE_ID || 'NO_SOURCE'; // ← ДОБАВЛЕНО значение по умолчанию!
     if (!grouped[sourceId]) {
       grouped[sourceId] = [];
     }
