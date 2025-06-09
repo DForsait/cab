@@ -1,4 +1,4 @@
-// controllers/dashboardController.js - ИСПРАВЛЕННАЯ версия с правильным подсчетом лидов
+// controllers/dashboardController.js - ФИНАЛЬНАЯ исправленная версия
 const LeadSource = require('../models/LeadSource');
 const bitrixService = require('../bitrix/bitrixService');
 const { format, parseISO, isValid } = require('date-fns');
@@ -94,6 +94,97 @@ Object.keys(STAGE_CONFIG).forEach(stageKey => {
     };
   });
 });
+
+/**
+ * ИСПРАВЛЕННАЯ функция получения дат с учетом московского времени и поддержкой всех периодов
+ */
+function getPeriodDates(period, startDate, endDate) {
+  const now = new Date();
+  
+  // HOTFIX: Обработка проблемных запросов от фронтенда
+  console.log(`🔧 ПОЛУЧЕН ЗАПРОС: period="${period}", startDate="${startDate}", endDate="${endDate}"`);
+  
+  // Функция для создания даты в московском времени
+  function toMoscowDateTime(dateString, isEndOfDay = false) {
+    const date = new Date(dateString);
+    if (isEndOfDay) {
+      date.setHours(23, 59, 59, 999);
+    } else {
+      date.setHours(0, 0, 0, 0);
+    }
+    
+    // Форматируем как ISO строку с явным указанием времени
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+  }
+  
+  let start, end;
+  
+  switch (period) {
+    case 'today':
+      start = toMoscowDateTime(now.toISOString().split('T')[0]);
+      end = toMoscowDateTime(now.toISOString().split('T')[0], true);
+      break;
+      
+    case 'yesterday':
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      start = toMoscowDateTime(yesterday.toISOString().split('T')[0]);
+      end = toMoscowDateTime(yesterday.toISOString().split('T')[0], true);
+      break;
+      
+    case 'week':
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay() + 1); // Понедельник
+      start = toMoscowDateTime(startOfWeek.toISOString().split('T')[0]);
+      end = toMoscowDateTime(now.toISOString().split('T')[0], true);
+      break;
+      
+    case 'month':
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      start = toMoscowDateTime(startOfMonth.toISOString().split('T')[0]);
+      end = toMoscowDateTime(now.toISOString().split('T')[0], true);
+      break;
+      
+    case 'quarter':
+      const currentQuarter = Math.floor(now.getMonth() / 3);
+      const quarterStart = new Date(now.getFullYear(), currentQuarter * 3, 1);
+      start = toMoscowDateTime(quarterStart.toISOString().split('T')[0]);
+      end = toMoscowDateTime(now.toISOString().split('T')[0], true);
+      break;
+      
+    case 'custom':
+      if (!startDate || !endDate) {
+        console.log('🔧 HOTFIX: period=custom без дат, используем последние 7 дней');
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - 7);
+        start = toMoscowDateTime(weekStart.toISOString().split('T')[0]);
+        end = toMoscowDateTime(now.toISOString().split('T')[0], true);
+      } else {
+        start = toMoscowDateTime(startDate);
+        end = toMoscowDateTime(endDate, true);
+      }
+      break;
+      
+    default:
+      // Fallback для любых других случаев
+      console.log(`🔧 HOTFIX: Неизвестный период "${period}", используем week`);
+      const defaultWeekStart = new Date(now);
+      defaultWeekStart.setDate(now.getDate() - now.getDay() + 1);
+      start = toMoscowDateTime(defaultWeekStart.toISOString().split('T')[0]);
+      end = toMoscowDateTime(now.toISOString().split('T')[0], true);
+  }
+  
+  console.log(`📅 Итоговый период "${period}": ${start} — ${end}`);
+  
+  return { start, end };
+}
 
 /**
  * Получение источников лидов
@@ -239,38 +330,35 @@ function calculateStageAnalysis(leads) {
 }
 
 /**
- * Получение аналитики лидов с ИСПРАВЛЕННОЙ логикой подсчета
+ * Получение аналитики лидов с ИСПРАВЛЕННОЙ логикой подсчета и московским временем
  */
 async function getLeadsAnalytics(req, res) {
   try {
     const startTime = Date.now();
-    console.log('📊 Запрос аналитики лидов с ПРАВИЛЬНЫМ подсчетом');
+    console.log('📊 Запрос аналитики лидов с ПРАВИЛЬНЫМ подсчетом и московским временем');
     
     // Получаем параметры
     const { period = 'week', sourceId, startDate, endDate } = req.query;
     
-    // Определяем период
-    let dateRange;
-    if (startDate && endDate) {
-      dateRange = { start: startDate, end: endDate };
-    } else {
-      dateRange = getDateRange(period);
-    }
+    console.log('🔍 Входящие параметры:', { period, sourceId, startDate, endDate });
+    
+    // Определяем период с учетом московского времени
+    const dateRange = getPeriodDates(period, startDate, endDate);
     
     console.log(`📅 Период анализа: ${dateRange.start} - ${dateRange.end}`);
     
-    // Формируем фильтры для Bitrix24
+    // Формируем фильтры для Bitrix24 с московским временем
     const filters = {
       '>=DATE_CREATE': dateRange.start,
       '<=DATE_CREATE': dateRange.end
     };
     
     // Добавляем фильтр по источнику если указан
-    if (sourceId) {
+    if (sourceId && sourceId !== 'all') {
       filters['SOURCE_ID'] = sourceId;
     }
     
-    console.log('🔍 Фильтры для поиска лидов:', filters);
+    console.log('🔍 Фильтры для Bitrix24 с московским временем:', filters);
     
     // Получаем лиды из Bitrix24
     const leads = await bitrixService.getLeads(filters);
@@ -385,7 +473,7 @@ async function getLeadsAnalytics(req, res) {
     
     const processingTime = Date.now() - startTime;
     console.log(`✅ Аналитика обработана за ${processingTime}ms`);
-    console.log(`📊 ИТОГО ПО ВСЕМ ИСТОЧНИКАМ: ${totalLeads} лидов (должно быть 229)`);
+    console.log(`📊 ИТОГО ПО ВСЕМ ИСТОЧНИКАМ: ${totalLeads} лидов`);
     
     res.json({
       success: true,
@@ -394,7 +482,7 @@ async function getLeadsAnalytics(req, res) {
       totalLeads, // ← теперь это просто leads.length
       totalMeetingsHeld,
       processingTime,
-      note: sourceId ? `Источник: ${sourceId}` : 'Все источники',
+      note: sourceId && sourceId !== 'all' ? `Источник: ${sourceId}` : 'Все источники',
       debug: {
         filters,
         requestedSources: sourceId || 'all',
@@ -469,38 +557,6 @@ function countMeetingsFromDeals(leads, deals) {
   });
   
   return relevantDeals.length;
-}
-
-/**
- * Определение диапазона дат
- */
-function getDateRange(period) {
-  const now = new Date();
-  let start, end;
-  
-  switch (period) {
-    case 'today':
-      start = format(now, 'yyyy-MM-dd');
-      end = format(now, 'yyyy-MM-dd');
-      break;
-    case 'week':
-      const weekStart = new Date(now);
-      weekStart.setDate(now.getDate() - now.getDay() + 1); // Понедельник
-      start = format(weekStart, 'yyyy-MM-dd');
-      end = format(now, 'yyyy-MM-dd');
-      break;
-    case 'month':
-      start = format(new Date(now.getFullYear(), now.getMonth(), 1), 'yyyy-MM-dd');
-      end = format(now, 'yyyy-MM-dd');
-      break;
-    default:
-      const defaultStart = new Date(now);
-      defaultStart.setDate(now.getDate() - 7);
-      start = format(defaultStart, 'yyyy-MM-dd');
-      end = format(now, 'yyyy-MM-dd');
-  }
-  
-  return { start, end };
 }
 
 /**
