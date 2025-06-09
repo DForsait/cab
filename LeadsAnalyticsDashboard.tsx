@@ -94,6 +94,7 @@ const LeadsAnalyticsDashboard: React.FC = () => {
     }
   };
 
+  // ИСПРАВЛЕННАЯ функция fetchAnalytics
   const fetchAnalytics = async () => {
     try {
       setLoading(true);
@@ -101,30 +102,61 @@ const LeadsAnalyticsDashboard: React.FC = () => {
 
       const params = new URLSearchParams();
       
-      if (period === 'custom' && customStartDate && customEndDate) {
-        params.append('startDate', customStartDate);
-        params.append('endDate', customEndDate);
-      } else {
-        params.append('period', period);
+      // ИСПРАВЛЕНО: всегда добавляем period, а для custom также добавляем даты
+      params.append('period', period);
+      
+      if (period === 'custom') {
+        if (customStartDate && customEndDate) {
+          params.append('startDate', customStartDate);
+          params.append('endDate', customEndDate);
+        } else {
+          // Если period=custom но нет дат, используем дефолтные даты (последние 7 дней)
+          const endDate = new Date();
+          const startDate = new Date(endDate);
+          startDate.setDate(endDate.getDate() - 7);
+          
+          const formatDate = (date: Date) => date.toISOString().split('T')[0];
+          params.append('startDate', formatDate(startDate));
+          params.append('endDate', formatDate(endDate));
+          
+          // Обновляем состояние, чтобы пользователь видел какие даты используются
+          setCustomStartDate(formatDate(startDate));
+          setCustomEndDate(formatDate(endDate));
+          
+          console.log('⚠️ Custom период без дат, используем последние 7 дней:', {
+            startDate: formatDate(startDate),
+            endDate: formatDate(endDate)
+          });
+        }
       }
       
       if (sourceId !== 'all') {
         params.append('sourceId', sourceId);
       }
 
-      console.log('🚀 Запрос аналитики с параметрами:', {
+      const requestUrl = `/api/dashboard/leads-analytics?${params}`;
+      
+      console.log('🚀 Запрос аналитики с ИСПРАВЛЕННЫМИ параметрами:', {
         period,
         sourceId,
         selectedSources,
         customStartDate,
         customEndDate,
-        url: `/api/dashboard/leads-analytics?${params}`
+        url: requestUrl,
+        params: Object.fromEntries(params)
       });
 
-      const response = await fetch(`/api/dashboard/leads-analytics?${params}`);
+      const response = await fetch(requestUrl);
       const data: ApiResponse = await response.json();
       
-      console.log('📊 Получен ответ API:', data);
+      console.log('📊 Получен ответ API:', {
+        success: data.success,
+        totalLeads: data.totalLeads,
+        sourcesCount: data.data?.length,
+        period: data.period,
+        processingTime: data.processingTime,
+        error: data.error
+      });
       
       if (data.success) {
         setAnalyticsData(data.data);
@@ -150,6 +182,28 @@ const LeadsAnalyticsDashboard: React.FC = () => {
       console.error('❌ Ошибка загрузки аналитики:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // НОВАЯ функция для обработки изменения периода
+  const handlePeriodChange = (newPeriod: string) => {
+    console.log('📅 Изменение периода:', newPeriod);
+    setPeriod(newPeriod);
+    
+    // Если переключаемся на custom, устанавливаем дефолтные даты
+    if (newPeriod === 'custom' && (!customStartDate || !customEndDate)) {
+      const endDate = new Date();
+      const startDate = new Date(endDate);
+      startDate.setDate(endDate.getDate() - 7);
+      
+      const formatDate = (date: Date) => date.toISOString().split('T')[0];
+      setCustomStartDate(formatDate(startDate));
+      setCustomEndDate(formatDate(endDate));
+      
+      console.log('📅 Установлены дефолтные даты для custom периода:', {
+        startDate: formatDate(startDate),
+        endDate: formatDate(endDate)
+      });
     }
   };
 
@@ -209,7 +263,6 @@ const LeadsAnalyticsDashboard: React.FC = () => {
   const totalMeetingsHeld = analytics?.totalMeetingsHeld || 0;
   const totalMeetingsScheduled = analyticsData.reduce((sum, item) => sum + (item.meetingsScheduled || 0), 0);
   const totalSources = analyticsData.length;
-  const totalComments = analyticsData.reduce((sum, item) => sum + (item.comments || 0), 0);
 
   const getConversionColor = (value: string) => {
     const numValue = parseFloat(value);
@@ -274,7 +327,7 @@ const LeadsAnalyticsDashboard: React.FC = () => {
               </label>
               <select
                 value={period}
-                onChange={(e) => setPeriod(e.target.value)}
+                onChange={(e) => handlePeriodChange(e.target.value)}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="today">Сегодня</option>
