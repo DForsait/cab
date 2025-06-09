@@ -270,15 +270,19 @@ function analyzeConversions(leads, deals, sourceId = null) {
  * 🎯 ОПРЕДЕЛЕНИЕ ТИПА ВСТРЕЧИ
  */
 function isScheduledMeeting(deal) {
-  // Логика определения назначенной vs состоявшейся встречи
   const title = (deal.TITLE || '').toLowerCase();
   
   // Ключевые слова для назначенной встречи
-  const scheduledKeywords = ['назначена', 'запланирована', 'встреча назначена'];
+  const scheduledKeywords = [
+    'назначена', 'запланирована', 'встреча назначена', 
+    'назначить', 'планируется', 'scheduled'
+  ];
   const isScheduledByTitle = scheduledKeywords.some(keyword => title.includes(keyword));
   
-  // Можно также использовать категорию или статус
-  const isScheduledByStatus = deal.CATEGORY_ID === 'SCHEDULED' || deal.STATUS_ID === 'SCHEDULED';
+  // Проверяем по категории или статусу
+  const isScheduledByStatus = deal.CATEGORY_ID === 'SCHEDULED' || 
+                             deal.STATUS_ID === 'SCHEDULED' ||
+                             deal.STAGE_ID === 'PREPARATION';
   
   return isScheduledByTitle || isScheduledByStatus;
 }
@@ -881,11 +885,26 @@ async function getDealCategories(req, res) {
   }
 }
 
+async function getSourceNames() {
+  try {
+    const sources = await LeadSource.find({}).select('bitrixId name');
+    const sourceMap = {};
+    sources.forEach(source => {
+      sourceMap[source.bitrixId] = source.name;
+    });
+    return sourceMap;
+  } catch (error) {
+    console.error('❌ Ошибка получения названий источников:', error);
+    return {};
+  }
+}
+
 module.exports = {
   getSources,
   syncSources,
   getLeadsAnalytics,
   getLeadStages,
   fixSourceIds,
-  getDealCategories
+  getDealCategories,
+  getSourceNames
 };
