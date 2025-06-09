@@ -1,4 +1,4 @@
-// controllers/dashboardController.js - ФИНАЛЬНАЯ исправленная версия с простой логикой отложенных конверсий
+// controllers/dashboardController.js - ФИНАЛЬНАЯ исправленная версия с улучшенной логикой
 const LeadSource = require('../models/LeadSource');
 const bitrixService = require('../bitrix/bitrixService');
 const { format, parseISO, isValid } = require('date-fns');
@@ -187,7 +187,7 @@ function getPeriodDates(period, startDate, endDate) {
 }
 
 /**
- * 🎯 ПРОСТАЯ И ГЕНИАЛЬНАЯ ЛОГИКА ОТЛОЖЕННЫХ КОНВЕРСИЙ
+ * 🎯 УЛУЧШЕННАЯ ЛОГИКА ОТЛОЖЕННЫХ КОНВЕРСИЙ
  */
 function analyzeConversions(leads, deals, sourceId = null) {
   console.log(`🎯 АНАЛИЗ КОНВЕРСИЙ: ${leads.length} лидов, ${deals.length} сделок`);
@@ -267,7 +267,7 @@ function analyzeConversions(leads, deals, sourceId = null) {
 }
 
 /**
- * 🎯 ОПРЕДЕЛЕНИЕ ТИПА ВСТРЕЧИ
+ * 🎯 УЛУЧШЕННОЕ ОПРЕДЕЛЕНИЕ ТИПА ВСТРЕЧИ
  */
 function isScheduledMeeting(deal) {
   const title = (deal.TITLE || '').toLowerCase();
@@ -288,7 +288,7 @@ function isScheduledMeeting(deal) {
 }
 
 /**
- * 🛠️ ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: подсчет статусов лидов
+ * 🛠️ ИСПРАВЛЕННАЯ ФУНКЦИЯ ПОДСЧЕТА СТАТУСОВ
  */
 function countLeadStatuses(sourceLeads) {
   const statusCounts = {
@@ -341,6 +341,23 @@ function countLeadStatuses(sourceLeads) {
 }
 
 /**
+ * 📊 ФУНКЦИЯ ПОЛУЧЕНИЯ НАЗВАНИЙ ИСТОЧНИКОВ
+ */
+async function getSourceNames() {
+  try {
+    const sources = await LeadSource.find({}).select('bitrixId name');
+    const sourceMap = {};
+    sources.forEach(source => {
+      sourceMap[source.bitrixId] = source.name;
+    });
+    return sourceMap;
+  } catch (error) {
+    console.error('❌ Ошибка получения названий источников:', error);
+    return {};
+  }
+}
+
+/**
  * Получение источников лидов
  */
 async function getSources(req, res) {
@@ -352,17 +369,230 @@ async function getSources(req, res) {
     
     res.json({
       success: true,
-      data: sources,
-      total: sources.length
+      data: sourceAnalytics,
+      period: dateRange,
+      totalLeads,
+      totalMeetingsHeld,
+      
+      // 🎯 ПРОСТЫЕ отложенные конверсии
+      totalMeetingsFromDatabase: conversions.delayedMeetings,
+      totalScheduledFromDatabase: conversions.delayedScheduled,
+      
+      processingTime,
+      note: `Анализ ${totalLeads} лидов из ${sourceAnalytics.length} источников с улучшенной логикой отложенных конверсий`,
+      debug: {
+        filters,
+        requestedSources: sourceId || 'all',
+        actualPeriod: period,
+        dateRange,
+        
+        // 🎯 УЛУЧШЕННАЯ детализация конверсий
+        basicConversions: {
+          meetings: conversions.basicMeetings,
+          scheduled: conversions.basicScheduled,
+          details: conversions.basicDetails.slice(0, 5)
+        },
+        delayedConversions: {
+          meetings: conversions.delayedMeetings,
+          scheduled: conversions.delayedScheduled,
+          details: conversions.delayedDetails.slice(0, 5)
+        },
+        
+        totalLeadsReceived: leads.length,
+        totalLeadsCounted: totalLeads,
+        leadsWithoutSource: sourceStats['NO_SOURCE'] || 0,
+        sampleLeads: leads.slice(0, 3).map(lead => ({
+          id: lead.ID,
+          sourceId: lead.SOURCE_ID,
+          statusId: lead.STATUS_ID,
+          contactId: lead.CONTACT_ID
+        })),
+        meetingsBreakdown: sourceAnalytics.slice(0, 5).map(item => ({
+          sourceName: item.sourceName,
+          totalLeads: item.totalLeads,
+          meetingsHeld: item.meetingsHeld,
+          meetingsHeldConversion: item.meetingsHeldConversion,
+          meetingsHeldFromScheduledConversion: item.meetingsHeldFromScheduledConversion,
+          meetingsFromDatabase: item.meetingsFromDatabase,
+          scheduledFromDatabase: item.scheduledFromDatabase
+        }))
+      }
     });
+    
   } catch (error) {
-    console.error('❌ Ошибка получения источников:', error);
+    console.error('❌ Ошибка получения аналитики лидов:', error);
     res.status(500).json({
       success: false,
-      error: 'Ошибка получения источников лидов'
+      error: 'Ошибка получения аналитики лидов'
     });
   }
 }
+
+/**
+ * Группировка лидов по источникам (ИСПРАВЛЕНО)
+ */
+function groupLeadsBySource(leads) {
+  const grouped = {};
+  
+  leads.forEach(lead => {
+    const sourceId = lead.SOURCE_ID || 'NO_SOURCE';
+    if (!grouped[sourceId]) {
+      grouped[sourceId] = [];
+    }
+    grouped[sourceId].push(lead);
+  });
+  
+  return grouped;
+}
+
+/**
+ * Подсчет встреч через сделки в воронке "Договор"
+ */
+function countMeetingsFromDeals(leads, deals) {
+  const leadIds = leads.map(lead => lead.ID);
+  const leadIdsSet = new Set(leadIds);
+  
+  // Считаем сделки, связанные с нашими лидами
+  const relevantDeals = deals.filter(deal => {
+    const leadId = deal.LEAD_ID;
+    return leadId && leadIdsSet.has(leadId);
+  });
+  
+  console.log(`📊 ДЕТАЛИ СОСТОЯВШИХСЯ ВСТРЕЧ:`);
+  relevantDeals.forEach((deal, index) => {
+    console.log(`  Встреча ${index + 1}:`);
+    console.log(`    Лид ID: ${deal.LEAD_ID}`);
+    console.log(`    Сделка: ${deal.TITLE}`);
+    console.log(`    Дата: ${deal.DATE_CREATE}`);
+  });
+  
+  return relevantDeals.length;
+}
+
+/**
+ * Получение стадий лидов с ТОЧНЫМИ статусами из API
+ */
+async function getLeadStages(req, res) {
+  try {
+    console.log('📊 Запрос стадий лидов');
+    
+    // Формируем полный список стадий из конфигурации с точными статусами
+    const stages = {};
+    
+    Object.keys(STAGE_CONFIG).forEach(stageKey => {
+      const stage = STAGE_CONFIG[stageKey];
+      stage.statuses.forEach(status => {
+        stages[status] = stage.name;
+      });
+    });
+    
+    console.log(`✅ Стадии подготовлены: ${Object.keys(stages).length}`);
+    console.log('📋 Список всех статусов:');
+    Object.keys(stages).forEach(statusId => {
+      console.log(`  ${statusId}: ${stages[statusId]}`);
+    });
+    
+    res.json({
+      success: true,
+      data: stages,
+      total: Object.keys(stages).length,
+      note: 'Статусы получены из точной конфигурации API Bitrix24'
+    });
+    
+  } catch (error) {
+    console.error('❌ Ошибка получения стадий лидов:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Ошибка получения стадий лидов'
+    });
+  }
+}
+
+/**
+ * Исправление ID источников в лидах
+ */
+async function fixSourceIds(req, res) {
+  try {
+    console.log('🔧 Начинаем исправление SOURCE_ID в лидах');
+    
+    // Получаем все лиды
+    const leads = await bitrixService.getLeads({});
+    console.log(`📥 Получено лидов для проверки: ${leads.length}`);
+    
+    let fixedCount = 0;
+    const errors = [];
+    
+    for (const lead of leads) {
+      try {
+        if (!lead.SOURCE_ID && lead.SOURCE_DESCRIPTION) {
+          // Пытаемся извлечь ID из описания
+          const match = lead.SOURCE_DESCRIPTION.match(/\d+/);
+          if (match) {
+            const sourceId = match[0];
+            
+            // Обновляем лид в Bitrix24
+            await bitrixService.updateLead(lead.ID, {
+              SOURCE_ID: sourceId
+            });
+            
+            fixedCount++;
+            console.log(`✅ Исправлен лид ${lead.ID}: SOURCE_ID = ${sourceId}`);
+          }
+        }
+      } catch (itemError) {
+        errors.push({
+          leadId: lead.ID,
+          error: itemError.message
+        });
+        console.error(`❌ Ошибка исправления лида ${lead.ID}:`, itemError);
+      }
+    }
+    
+    console.log(`✅ Исправление завершено: ${fixedCount} лидов`);
+    
+    res.json({
+      success: true,
+      message: `Исправлено ${fixedCount} лидов`,
+      fixed: fixedCount,
+      errors: errors.length,
+      errorDetails: errors.slice(0, 10) // Первые 10 ошибок
+    });
+    
+  } catch (error) {
+    console.error('❌ Ошибка исправления SOURCE_ID:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Ошибка исправления SOURCE_ID в лидах'
+    });
+  }
+}
+
+/**
+ * Получение воронок сделок
+ */
+async function getDealCategories(req, res) {
+  try {
+    console.log('📊 Запрос воронок сделок');
+    
+    const categories = await bitrixService.getDealCategories();
+    console.log(`✅ Получено воронок: ${categories.length}`);
+    
+    res.json({
+      success: true,
+      data: categories,
+      total: categories.length
+    });
+    
+  } catch (error) {
+    console.error('❌ Ошибка получения воронок сделок:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Ошибка получения воронок сделок'
+    });
+  }
+}
+
+
 
 /**
  * Синхронизация источников с Bitrix24
@@ -484,12 +714,12 @@ function calculateStageAnalysis(leads) {
 }
 
 /**
- * Получение аналитики лидов с ПРОСТОЙ логикой отложенных конверсий
+ * УЛУЧШЕННАЯ функция получения аналитики лидов
  */
 async function getLeadsAnalytics(req, res) {
   try {
     const startTime = Date.now();
-    console.log('📊 Запрос аналитики лидов с ПРОСТОЙ логикой отложенных конверсий');
+    console.log('📊 Запрос аналитики лидов с УЛУЧШЕННОЙ логикой отложенных конверсий');
     
     // Получаем параметры
     const { period = 'week', sourceId, startDate, endDate } = req.query;
@@ -526,8 +756,11 @@ async function getLeadsAnalytics(req, res) {
     });
     console.log(`📥 Получено сделок за период: ${deals.length}`);
     
-    // 🎯 ПРОСТОЙ АНАЛИЗ КОНВЕРСИЙ
+    // 🎯 УЛУЧШЕННЫЙ АНАЛИЗ КОНВЕРСИЙ
     const conversions = analyzeConversions(leads, deals, sourceId);
+    
+    // 📊 ПОЛУЧАЕМ НАЗВАНИЯ ИСТОЧНИКОВ
+    const sourceNames = await getSourceNames();
     
     // ДОБАВЛЯЕМ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
     console.log('🔍 Проверка SOURCE_ID в лидах:');
@@ -582,14 +815,24 @@ async function getLeadsAnalytics(req, res) {
       
       console.log(`\n📊 Анализ источника ${currentSourceId}: ${sourceLeads.length} лидов`);
       
+      // 📝 ПОЛУЧАЕМ НАЗВАНИЕ ИСТОЧНИКА
+      const sourceName = sourceNames[currentSourceId] || `Источник ${currentSourceId}`;
+      
       // Подсчеты статусов
       const statusCounts = countLeadStatuses(sourceLeads);
       
       // Основные встречи (только для лидов в периоде)
       const meetingsHeld = countMeetingsFromDeals(sourceLeads, deals);
       
-      // ИСПРАВЛЕННАЯ логика назначенных встреч
-      const meetingsScheduledTotal = statusCounts.meetingsScheduledStatus + meetingsHeld;
+      // 🎯 ИСПРАВЛЕННАЯ ЛОГИКА НАЗНАЧЕННЫХ ВСТРЕЧ
+      // Все назначенные = статус "назначена" + все состоявшиеся (так как состоявшиеся были назначены)
+      const meetingsScheduledFromStatus = statusCounts.meetingsScheduledStatus;
+      const meetingsScheduledTotal = meetingsScheduledFromStatus + meetingsHeld;
+      
+      console.log(`🔧 ИСПРАВЛЕННЫЕ МЕТРИКИ для источника ${currentSourceId}:`);
+      console.log(`  📅 Назначено по статусу: ${meetingsScheduledFromStatus}`);
+      console.log(`  🤝 Состоялось: ${meetingsHeld}`);
+      console.log(`  📊 ВСЕГО назначено: ${meetingsScheduledTotal} (статус + состоявшиеся)`);
       
       // Конверсия из назначенной в состоявшуюся
       const meetingsHeldFromScheduledConversion = meetingsScheduledTotal > 0 
@@ -606,7 +849,7 @@ async function getLeadsAnalytics(req, res) {
       
       const analytics = {
         sourceId: currentSourceId,
-        sourceName: `Источник ${currentSourceId}`,
+        sourceName, // 📝 НАЗВАНИЕ ИСТОЧНИКА
         totalLeads: sourceLeads.length,
         
         // Основные метрики
@@ -616,8 +859,8 @@ async function getLeadsAnalytics(req, res) {
         qualified: statusCounts.qualified,
         qualifiedConversion: sourceLeads.length > 0 ? ((statusCounts.qualified / sourceLeads.length) * 100).toFixed(1) : '0.0',
         
-        // ИСПРАВЛЕННЫЕ встречи
-        meetingsScheduled: meetingsScheduledTotal,
+        // 🎯 ИСПРАВЛЕННЫЕ встречи
+        meetingsScheduled: meetingsScheduledTotal, // ИСПРАВЛЕНО!
         meetingsScheduledConversion: sourceLeads.length > 0 ? ((meetingsScheduledTotal / sourceLeads.length) * 100).toFixed(1) : '0.0',
         
         meetingsHeld,
@@ -626,14 +869,14 @@ async function getLeadsAnalytics(req, res) {
         // НОВАЯ метрика
         meetingsHeldFromScheduledConversion,
         
-        // 🎯 ПРОСТЫЕ отложенные конверсии
+        // 🎯 ПРОСТЫЕ отложенные конверсии (включая назначенные!)
         meetingsFromDatabase,
-        scheduledFromDatabase,
+        scheduledFromDatabase, // ТЕПЕРЬ ТОЖЕ СЧИТАЕТСЯ!
         
         junk: statusCounts.junk,
         junkPercent: sourceLeads.length > 0 ? ((statusCounts.junk / sourceLeads.length) * 100).toFixed(1) : '0.0',
         
-        under250k: sourceLeads.length, // Пока все лиды считаем как до 250к
+        under250k: sourceLeads.length,
         under250kPercent: '100.0',
         
         stageAnalysis: {
@@ -647,12 +890,12 @@ async function getLeadsAnalytics(req, res) {
       };
       
       sourceAnalytics.push(analytics);
-      console.log(`✅ Источник ${currentSourceId}: ${sourceLeads.length} лидов, ${meetingsHeld} встреч, ${meetingsFromDatabase} из базы`);
+      console.log(`✅ Источник ${sourceName}: ${sourceLeads.length} лидов, ${meetingsHeld} встреч, ${meetingsFromDatabase} из базы`);
     }
     
     const processingTime = Date.now() - startTime;
     
-    console.log(`\n🎯 ИТОГОВАЯ СТАТИСТИКА (ПРОСТАЯ ЛОГИКА):`);
+    console.log(`\n🎯 ИТОГОВАЯ СТАТИСТИКА (УЛУЧШЕННАЯ ЛОГИКА):`);
     console.log(`📊 Всего источников: ${sourceAnalytics.length}`);
     console.log(`📈 Всего лидов: ${totalLeads}`);
     console.log(`🤝 Всего встреч: ${totalMeetingsHeld}`);
