@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Filter, RefreshCw, Users, TrendingUp, Calendar as CalendarIcon, BarChart3 } from 'lucide-react';
-import '../components/StickyTable.css';
 
 interface AnalyticsData {
   sourceId: string;
@@ -96,15 +95,12 @@ const LeadsAnalyticsDashboard: React.FC = () => {
     }
   };
 
-  // ИСПРАВЛЕННАЯ функция fetchAnalytics
   const fetchAnalytics = async () => {
     try {
       setLoading(true);
       setError(null);
 
       const params = new URLSearchParams();
-      
-      // ИСПРАВЛЕНО: всегда добавляем period, а для custom также добавляем даты
       params.append('period', period);
       
       if (period === 'custom') {
@@ -112,7 +108,6 @@ const LeadsAnalyticsDashboard: React.FC = () => {
           params.append('startDate', customStartDate);
           params.append('endDate', customEndDate);
         } else {
-          // Если period=custom но нет дат, используем дефолтные даты (последние 7 дней)
           const endDate = new Date();
           const startDate = new Date(endDate);
           startDate.setDate(endDate.getDate() - 7);
@@ -121,14 +116,8 @@ const LeadsAnalyticsDashboard: React.FC = () => {
           params.append('startDate', formatDate(startDate));
           params.append('endDate', formatDate(endDate));
           
-          // Обновляем состояние, чтобы пользователь видел какие даты используются
           setCustomStartDate(formatDate(startDate));
           setCustomEndDate(formatDate(endDate));
-          
-          console.log('⚠️ Custom период без дат, используем последние 7 дней:', {
-            startDate: formatDate(startDate),
-            endDate: formatDate(endDate)
-          });
         }
       }
       
@@ -138,61 +127,25 @@ const LeadsAnalyticsDashboard: React.FC = () => {
 
       const requestUrl = `/api/dashboard/leads-analytics?${params}`;
       
-      console.log('🚀 Запрос аналитики с ИСПРАВЛЕННЫМИ параметрами:', {
-        period,
-        sourceId,
-        selectedSources,
-        customStartDate,
-        customEndDate,
-        url: requestUrl,
-        params: Object.fromEntries(params)
-      });
-
       const response = await fetch(requestUrl);
       const data: ApiResponse = await response.json();
-      
-      console.log('📊 Получен ответ API:', {
-        success: data.success,
-        totalLeads: data.totalLeads,
-        sourcesCount: data.data?.length,
-        period: data.period,
-        processingTime: data.processingTime,
-        error: data.error
-      });
       
       if (data.success) {
         setAnalyticsData(data.data);
         setAnalytics(data);
-        console.log('✅ Получены данные аналитики:', {
-          источников: data.data.length,
-          всегоЛидов: data.totalLeads,
-          встречСостоялось: data.totalMeetingsHeld,
-          период: data.period,
-          времяОбработки: data.processingTime + 'ms'
-        });
-        
-        // Дополнительная отладочная информация о встречах
-        if (data.debug?.meetingsBreakdown) {
-          console.log('🤝 Детализация встреч по источникам:', data.debug.meetingsBreakdown);
-        }
       } else {
         setError(data.error || 'Ошибка загрузки данных');
-        console.error('❌ Ошибка API:', data.error);
       }
     } catch (error) {
       setError('Ошибка сети при загрузке данных');
-      console.error('❌ Ошибка загрузки аналитики:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // НОВАЯ функция для обработки изменения периода
   const handlePeriodChange = (newPeriod: string) => {
-    console.log('📅 Изменение периода:', newPeriod);
     setPeriod(newPeriod);
     
-    // Если переключаемся на custom, устанавливаем дефолтные даты
     if (newPeriod === 'custom' && (!customStartDate || !customEndDate)) {
       const endDate = new Date();
       const startDate = new Date(endDate);
@@ -201,46 +154,29 @@ const LeadsAnalyticsDashboard: React.FC = () => {
       const formatDate = (date: Date) => date.toISOString().split('T')[0];
       setCustomStartDate(formatDate(startDate));
       setCustomEndDate(formatDate(endDate));
-      
-      console.log('📅 Установлены дефолтные даты для custom периода:', {
-        startDate: formatDate(startDate),
-        endDate: formatDate(endDate)
-      });
     }
   };
 
-  // ИСПРАВЛЕННАЯ функция выбора источников
   const handleSourceChange = (sourceIdToToggle: string) => {
-    console.log('🔄 Изменение источника:', sourceIdToToggle, 'текущие выбранные:', selectedSources);
-    
     if (sourceIdToToggle === 'all') {
-      // Выбор "Все источники"
       setSelectedSources([]);
       setSourceId('all');
-      console.log('✅ Выбраны все источники');
     } else {
-      // Переключение конкретного источника
       const newSelectedSources = selectedSources.includes(sourceIdToToggle)
         ? selectedSources.filter(id => id !== sourceIdToToggle)
         : [...selectedSources, sourceIdToToggle];
       
-      console.log('📝 Новые выбранные источники:', newSelectedSources);
       setSelectedSources(newSelectedSources);
-      
-      // Обновляем sourceId для API
       const newSourceId = newSelectedSources.length > 0 ? newSelectedSources.join(',') : 'all';
       setSourceId(newSourceId);
-      console.log('🎯 Новый sourceId для API:', newSourceId);
     }
   };
 
   const handleRefresh = () => {
-    console.log('🔄 Принудительное обновление данных...');
     fetchAnalytics();
   };
 
   const handleSort = (field: keyof AnalyticsData) => {
-    console.log('📊 Сортировка по полю:', field);
     if (field === sortField) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -260,34 +196,26 @@ const LeadsAnalyticsDashboard: React.FC = () => {
     }
   });
 
-  // ИСПРАВЛЕННЫЕ метрики - используем данные из API response
   const totalLeads = analytics?.totalLeads || 0;
   const totalMeetingsHeld = analytics?.totalMeetingsHeld || 0;
   const totalMeetingsScheduled = analyticsData.reduce((sum, item) => sum + (item.meetingsScheduled || 0), 0);
   const totalSources = analyticsData.length;
 
-    const getConversionColor = (value: string) => {
+  const getConversionColor = (value: string) => {
     const numValue = parseFloat(value);
-    if (numValue >= 50) return 'conversion-high';
-    if (numValue >= 20) return 'conversion-medium';
-    return 'conversion-low';
-  }
-  const getMeetingsColor = (value: number) => {
-    if (value > 0) return 'bg-green-100 text-green-800';
-    return 'bg-gray-100 text-gray-800';
+    if (numValue >= 50) return 'text-green-600 font-semibold';
+    if (numValue >= 20) return 'text-orange-600 font-semibold';
+    return 'text-red-600 font-semibold';
   };
 
-  // Проверка, выбран ли источник
   const isSourceSelected = (sourceIdToCheck: string) => {
     return selectedSources.includes(sourceIdToCheck);
   };
 
-  // Проверка, выбраны ли все источники
   const isAllSourcesSelected = () => {
     return selectedSources.length === 0;
   };
 
-  // Функция для получения статуса загрузки
   const getLoadingStatus = () => {
     if (loading) return 'Загрузка данных...';
     if (error) return `Ошибка: ${error}`;
@@ -363,14 +291,12 @@ const LeadsAnalyticsDashboard: React.FC = () => {
               </>
             )}
 
-            {/* ИСПРАВЛЕННЫЙ блок выбора источников */}
             <div className="flex-1 min-w-48">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <Filter className="inline w-4 h-4 mr-1" />
                 Источники:
               </label>
               <div className="border border-gray-300 rounded-md p-3 max-h-40 overflow-y-auto bg-white">
-                {/* Чек-бокс "Все источники" */}
                 <label className="flex items-center mb-2 cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors">
                   <input
                     type="checkbox"
@@ -381,10 +307,8 @@ const LeadsAnalyticsDashboard: React.FC = () => {
                   <span className="text-sm font-medium text-gray-900">Все источники</span>
                 </label>
                 
-                {/* Разделитель */}
                 <hr className="my-2 border-gray-200" />
                 
-                {/* Отдельные источники */}
                 {sources.map((source) => (
                   <label 
                     key={source._id} 
@@ -406,7 +330,6 @@ const LeadsAnalyticsDashboard: React.FC = () => {
                 ))}
               </div>
               
-              {/* Индикатор выбранных источников */}
               <div className="text-xs text-gray-500 mt-2">
                 {isAllSourcesSelected() 
                   ? `Все источники (${sources.length})` 
@@ -426,7 +349,7 @@ const LeadsAnalyticsDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* УЛУЧШЕННАЯ статистика - используем данные из API */}
+        {/* Статистика */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
           <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500">
             <div className="flex items-center">
@@ -507,7 +430,7 @@ const LeadsAnalyticsDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* УЛУЧШЕННАЯ таблица */}
+        {/* ТАБЛИЦА С ЗАКРЕПЛЕННЫМИ ЭЛЕМЕНТАМИ */}
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           {loading ? (
             <div className="flex items-center justify-center py-12">
@@ -531,56 +454,79 @@ const LeadsAnalyticsDashboard: React.FC = () => {
               <p className="text-gray-500">Нет данных для отображения</p>
             </div>
           ) : (
-            // НОВЫЙ контейнер с закрепленными заголовками
             <div className="relative">
-              <div className="overflow-auto max-h-[calc(100vh-500px)]" style={{ maxHeight: '600px' }}>
-                <table className="w-full">
-                  {/* ЗАКРЕПЛЕННЫЙ ЗАГОЛОВОК */}
-                  <thead className="bg-gray-50 sticky top-0 z-20">
+              <div 
+                className="overflow-auto" 
+                style={{ 
+                  maxHeight: '600px',
+                  scrollBehavior: 'smooth'
+                }}
+              >
+                <table className="w-full border-collapse">
+                  <thead 
+                    className="bg-gray-50 sticky top-0 z-20"
+                    style={{
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}
+                  >
                     <tr>
-                      {/* ЗАКРЕПЛЕННЫЙ ПЕРВЫЙ СТОЛБЕЦ */}
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-30 border-r border-gray-200">
+                      <th 
+                        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-30 border-r border-gray-200"
+                        style={{
+                          minWidth: '200px',
+                          boxShadow: '2px 0 4px rgba(0,0,0,0.1)'
+                        }}
+                      >
                         ID и название источника
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '120px' }}>
                         Количество лидов, шт
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '120px' }}>
                         Комм. установлена
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-24">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '90px' }}>
                         CR в комм.
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '120px' }}>
                         Назначено встреч
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-24">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '90px' }}>
                         CR в назначи.
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '120px' }}>
                         Состоялись встречи
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-24">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '90px' }}>
                         CR в состоявш.
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-36">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '150px' }}>
                         CR из назначенной в состоявш.
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-28">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '110px' }}>
                         Кол-во брака
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-24">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '90px' }}>
                         % в брак
                       </th>
                     </tr>
                   </thead>
                   
-                  {/* ТЕЛО ТАБЛИЦЫ */}
                   <tbody className="bg-white divide-y divide-gray-200">
                     {sortedData.map((item, index) => (
-                      <tr key={item.sourceId} className={index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50 hover:bg-gray-100'}>
-                        {/* ЗАКРЕПЛЕННЫЙ ПЕРВЫЙ СТОЛБЕЦ */}
-                        <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-inherit z-10 border-r border-gray-200">
+                      <tr 
+                        key={item.sourceId} 
+                        className={`${
+                          index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50 hover:bg-gray-100'
+                        } transition-colors`}
+                      >
+                        <td 
+                          className="px-6 py-4 whitespace-nowrap sticky left-0 bg-inherit z-10 border-r border-gray-200"
+                          style={{
+                            minWidth: '200px',
+                            boxShadow: '2px 0 4px rgba(0,0,0,0.1)'
+                          }}
+                        >
                           <div className="text-sm font-medium text-gray-900">{item.sourceName}</div>
                           <div className="text-sm text-gray-500">{item.sourceId}</div>
                         </td>
@@ -590,28 +536,28 @@ const LeadsAnalyticsDashboard: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {item.comments}
                         </td>
-                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.commentsConversion)}`}>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm ${getConversionColor(item.commentsConversion)}`}>
                           {item.commentsConversion}%
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {item.meetingsScheduled}
                         </td>
-                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsScheduledConversion)}`}>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm ${getConversionColor(item.meetingsScheduledConversion)}`}>
                           {item.meetingsScheduledConversion}%
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {item.meetingsHeld}
                         </td>
-                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsHeldConversion)}`}>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm ${getConversionColor(item.meetingsHeldConversion)}`}>
                           {item.meetingsHeldConversion}%
                         </td>
-                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsHeldFromScheduledConversion)}`}>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm ${getConversionColor(item.meetingsHeldFromScheduledConversion)}`}>
                           {item.meetingsHeldFromScheduledConversion}%
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {item.junk}
                         </td>
-                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.junkPercent)}`}>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm ${getConversionColor(item.junkPercent)}`}>
                           {item.junkPercent}%
                         </td>
                       </tr>
@@ -623,7 +569,7 @@ const LeadsAnalyticsDashboard: React.FC = () => {
           )}
         </div>
 
-        {/* УЛУЧШЕННАЯ Debug информация */}
+        {/* Debug информация */}
         {analytics?.debug && (
           <div className="mt-6 bg-gray-100 rounded-lg p-4">
             <details>
@@ -634,7 +580,6 @@ const LeadsAnalyticsDashboard: React.FC = () => {
                 </span>
               </summary>
               <div className="mt-4 space-y-4">
-                {/* Краткая сводка */}
                 <div className="bg-white p-3 rounded border">
                   <h4 className="font-medium text-gray-800 mb-2">Краткая сводка:</h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
@@ -645,7 +590,6 @@ const LeadsAnalyticsDashboard: React.FC = () => {
                   </div>
                 </div>
                 
-                {/* Детализация встреч */}
                 {analytics.debug.meetingsBreakdown && analytics.debug.meetingsBreakdown.length > 0 && (
                   <div className="bg-white p-3 rounded border">
                     <h4 className="font-medium text-gray-800 mb-2">Детализация встреч по источникам:</h4>
@@ -663,24 +607,6 @@ const LeadsAnalyticsDashboard: React.FC = () => {
                   </div>
                 )}
                 
-                {/* Примеры лидов */}
-                {analytics.debug.sampleLeads && analytics.debug.sampleLeads.length > 0 && (
-                  <div className="bg-white p-3 rounded border">
-                    <h4 className="font-medium text-gray-800 mb-2">Примеры лидов:</h4>
-                    <div className="space-y-1 text-xs">
-                      {analytics.debug.sampleLeads.map((lead: any, index: number) => (
-                        <div key={index} className="grid grid-cols-4 gap-2">
-                          <span>ID: {lead.id}</span>
-                          <span>Источник: {lead.sourceId}</span>
-                          <span>Статус: {lead.statusId}</span>
-                          <span>Контакт: {lead.contactId || 'N/A'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Полная debug информация */}
                 <details className="bg-white p-3 rounded border">
                   <summary className="cursor-pointer text-xs font-medium text-gray-700">
                     Полная debug информация
