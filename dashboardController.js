@@ -87,6 +87,7 @@ const STAGE_CONFIG = {
     statuses: ['UC_IN9DMO'],
     name: 'Неизвестный статус',
     type: 'unknown'
+}
 };
 
 // Создаем обратный маппинг: статус -> конфигурация
