@@ -614,16 +614,14 @@ async function getUsers(filters = {}) {
         'ACTIVE',
         'WORK_POSITION',
         'UF_DEPARTMENT'
-      ],
-      filter: {
-        ACTIVE: 'Y', // Только активные пользователи
-        ...filters
-      }
+      ]
+      // Убираем фильтр ACTIVE - получаем всех пользователей
     };
     
     console.log('🔍 Параметры запроса пользователей:', params);
     
-    const response = await makeRequest('user.get', params);
+    // ИСПРАВЛЕНО: bitrixRequest вместо makeRequest
+    const response = await bitrixRequest('user.get', params);
     
     if (response && response.result) {
       console.log(`✅ Получено пользователей: ${response.result.length}`);
@@ -642,7 +640,7 @@ async function getUsers(filters = {}) {
     
   } catch (error) {
     console.error('❌ Ошибка получения пользователей из Bitrix24:', error);
-    throw error;
+    return [];
   }
 }
 
