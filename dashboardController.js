@@ -412,6 +412,18 @@ async function getLeadsAnalytics(req, res) {
     const leads = await bitrixService.getLeads(filters);
     console.log(`📥 Получено лидов: ${leads.length}`);
     
+    // 🔍 ВРЕМЕННЫЙ DEBUG ДЛЯ ПРОВЕРКИ СТРУКТУРЫ ЛИДОВ
+    if (leads.length > 0) {
+      console.log('🔍 ПОЛНАЯ СТРУКТУРА ПЕРВОГО ЛИДА:');
+      console.log('Все поля лида:', Object.keys(leads[0]));
+      console.log('Поля ответственности:', {
+        ASSIGNED_BY_ID: leads[0].ASSIGNED_BY_ID,
+        RESPONSIBLE_USER_ID: leads[0].RESPONSIBLE_USER_ID,
+        CREATED_BY_ID: leads[0].CREATED_BY_ID,
+        MODIFY_BY_ID: leads[0].MODIFY_BY_ID
+      });
+    }
+    
     // 📊 ПОЛУЧАЕМ НАЗВАНИЯ ИСТОЧНИКОВ
     const sourceNames = await getSourceNames();
     
@@ -543,13 +555,25 @@ async function getLeadsAnalytics(req, res) {
         totalLeadsReceived: leads.length,
         totalLeadsCounted: totalLeads,
         leadsWithoutSource: sourceStats['NO_SOURCE'] || 0,
+        
+        // 🔍 РАСШИРЕННЫЙ DEBUG ДЛЯ АНАЛИЗА СТРУКТУРЫ ЛИДОВ
+        fullLeadStructure: leads.length > 0 ? Object.keys(leads[0]) : [],
+        
         sampleLeads: leads.slice(0, 3).map(lead => ({
           id: lead.ID,
           sourceId: lead.SOURCE_ID,
           statusId: lead.STATUS_ID,
           sourceName: lead.SOURCE_DESCRIPTION || 'Неизвестно',
-          contactId: lead.CONTACT_ID
+          contactId: lead.CONTACT_ID,
+          // 🎯 ПОЛЯ ДЛЯ АНАЛИТИКИ СОТРУДНИКОВ
+          assignedById: lead.ASSIGNED_BY_ID,
+          responsibleUserId: lead.RESPONSIBLE_USER_ID,
+          createdById: lead.CREATED_BY_ID,
+          modifiedById: lead.MODIFY_BY_ID,
+          dateCreate: lead.DATE_CREATE,
+          dateModify: lead.DATE_MODIFY
         })),
+        
         meetingsBreakdown: sourceAnalytics.slice(0, 5).map(item => ({
           sourceName: item.sourceName,
           totalLeads: item.totalLeads,
@@ -689,10 +713,297 @@ async function getDealCategories(req, res) {
   }
 }
 
+/**
+ * 👥 ФУНКЦИИ ДЛЯ АНАЛИТИКИ СОТРУДНИКОВ
+ * Добавить в конец dashboardController.js (перед module.exports)
+ */
+
+/**
+ * Получение имен сотрудников из Bitrix24 с кэшированием
+ */
+async function getEmployeeNames() {
+  try {
+    console.log('👥 Получение имен сотрудников из Bitrix24');
+    const users = await bitrixService.getUsers();
+    const employeeMap = {};
+    
+    users.forEach(user => {
+      employeeMap[user.ID] = {
+        id: user.ID,
+        name: `${user.NAME || ''} ${user.LAST_NAME || ''}`.trim() || `Пользователь ${user.ID}`,
+        email: user.EMAIL || '',
+        position: user.WORK_POSITION || '',
+        active: user.ACTIVE === 'Y'
+      };
+    });
+    
+    console.log(`✅ Обработано сотрудников: ${Object.keys(employeeMap).length}`);
+    return employeeMap;
+  } catch (error) {
+    console.error('❌ Ошибка получения имен сотрудников:', error);
+    return {};
+  }
+}
+
+/**
+ * Группировка лидов по сотрудникам
+ */
+function groupLeadsByEmployee(leads) {
+  const grouped = {};
+  
+  leads.forEach(lead => {
+    const employeeId = lead.ASSIGNED_BY_ID || 'NO_EMPLOYEE';
+    if (!grouped[employeeId]) {
+      grouped[employeeId] = [];
+    }
+    grouped[employeeId].push(lead);
+  });
+  
+  return grouped;
+}
+
+/**
+ * Анализ источников для конкретного сотрудника
+ */
+function analyzeEmployeeSources(employeeLeads, sourceNames) {
+  const sourceStats = {};
+  
+  // Группируем лиды сотрудника по источникам
+  employeeLeads.forEach(lead => {
+    const sourceId = lead.SOURCE_ID || 'NO_SOURCE';
+    if (!sourceStats[sourceId]) {
+      sourceStats[sourceId] = [];
+    }
+    sourceStats[sourceId].push(lead);
+  });
+  
+  const sourceAnalytics = [];
+  
+  // Анализируем каждый источник для сотрудника
+  Object.entries(sourceStats).forEach(([sourceId, sourceLeads]) => {
+    const sourceName = sourceNames[sourceId] || `Источник ${sourceId}`;
+    const stageAnalysis = calculateStageAnalysis(sourceLeads);
+    
+    // Используем ту же логику что и в основной аналитике
+    const meetingsHeld = countMeetingsFromLeadStatus(sourceLeads);
+    const meetingsScheduled = stageAnalysis.meetingsScheduled;
+    const communication = stageAnalysis.communication + stageAnalysis.noResponse + stageAnalysis.longNoCall;
+    const qualified = stageAnalysis.qualified;
+    const junk = stageAnalysis.junk;
+    
+    // Общее количество назначенных встреч
+    const meetingsScheduledTotal = meetingsScheduled + meetingsHeld;
+    
+    // Конверсии
+    const meetingsHeldFromScheduledConversion = meetingsScheduledTotal > 0 
+      ? ((meetingsHeld / meetingsScheduledTotal) * 100).toFixed(1)
+      : '0.0';
+    
+    sourceAnalytics.push({
+      sourceId,
+      sourceName,
+      totalLeads: sourceLeads.length,
+      comments: communication,
+      commentsConversion: sourceLeads.length > 0 ? ((communication / sourceLeads.length) * 100).toFixed(1) : '0.0',
+      qualified,
+      qualifiedConversion: sourceLeads.length > 0 ? ((qualified / sourceLeads.length) * 100).toFixed(1) : '0.0',
+      meetingsScheduled: meetingsScheduledTotal,
+      meetingsScheduledConversion: sourceLeads.length > 0 ? ((meetingsScheduledTotal / sourceLeads.length) * 100).toFixed(1) : '0.0',
+      meetingsHeld,
+      meetingsHeldConversion: sourceLeads.length > 0 ? ((meetingsHeld / sourceLeads.length) * 100).toFixed(1) : '0.0',
+      meetingsHeldFromScheduledConversion,
+      junk,
+      junkPercent: sourceLeads.length > 0 ? ((junk / sourceLeads.length) * 100).toFixed(1) : '0.0'
+    });
+  });
+  
+  // Сортируем по количеству лидов (убывание)
+  return sourceAnalytics.sort((a, b) => b.totalLeads - a.totalLeads);
+}
+
+/**
+ * 🎯 ОСНОВНАЯ ФУНКЦИЯ - АНАЛИТИКА ПО СОТРУДНИКАМ
+ * Использует ТЕ ЖЕ фильтры что и основная аналитика источников
+ */
+async function getEmployeesAnalytics(req, res) {
+  try {
+    const startTime = Date.now();
+    console.log('👥 Запрос аналитики по сотрудникам');
+    
+    // 🎯 ИСПОЛЬЗУЕМ ТЕ ЖЕ ПАРАМЕТРЫ что и в основной аналитике
+    const { period = 'week', sourceId, startDate, endDate, employeeId } = req.query;
+    
+    console.log('🔍 Входящие параметры аналитики сотрудников:', { 
+      period, sourceId, startDate, endDate, employeeId 
+    });
+    
+    const dateRange = getPeriodDates(period, startDate, endDate);
+    console.log(`📅 Период анализа сотрудников: ${dateRange.start} - ${dateRange.end}`);
+    
+    // 🎯 ТЕ ЖЕ ФИЛЬТРЫ что и для источников
+    const filters = {
+      '>=DATE_CREATE': dateRange.start,
+      '<=DATE_CREATE': dateRange.end
+    };
+    
+    // Фильтр по источнику (как в основной аналитике)
+    if (sourceId && sourceId !== 'all') {
+      if (sourceId.includes(',')) {
+        // Если выбрано несколько источников
+        const sourceIds = sourceId.split(',');
+        console.log(`🔍 Фильтр по источникам: ${sourceIds.join(', ')}`);
+        // Bitrix24 может не поддерживать массивы в фильтрах, поэтому получаем все и фильтруем после
+      } else {
+        filters['SOURCE_ID'] = sourceId;
+      }
+    }
+    
+    // Фильтр по конкретному сотруднику
+    if (employeeId && employeeId !== 'all') {
+      filters['ASSIGNED_BY_ID'] = employeeId;
+    }
+    
+    console.log('🔍 Фильтры для получения лидов сотрудников:', filters);
+    
+    // Получаем данные параллельно для производительности
+    const [leads, employeeNames, sourceNames] = await Promise.all([
+      bitrixService.getLeads(filters),
+      getEmployeeNames(),
+      getSourceNames()
+    ]);
+    
+    console.log(`📥 Получено лидов для анализа сотрудников: ${leads.length}`);
+    console.log(`👥 Получено сотрудников из системы: ${Object.keys(employeeNames).length}`);
+    
+    // 🎯 ДОПОЛНИТЕЛЬНАЯ ФИЛЬТРАЦИЯ ПО ИСТОЧНИКАМ (если выбрано несколько)
+    let filteredLeads = leads;
+    if (sourceId && sourceId !== 'all' && sourceId.includes(',')) {
+      const sourceIds = sourceId.split(',');
+      filteredLeads = leads.filter(lead => sourceIds.includes(lead.SOURCE_ID));
+      console.log(`🔍 После фильтрации по источникам осталось лидов: ${filteredLeads.length}`);
+    }
+    
+    if (filteredLeads.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        period: dateRange,
+        totalLeads: 0,
+        totalEmployees: 0,
+        totalMeetingsHeld: 0,
+        note: 'Лиды не найдены за указанный период для выбранных фильтров'
+      });
+    }
+    
+    // Группируем лиды по сотрудникам
+    const leadsByEmployee = groupLeadsByEmployee(filteredLeads);
+    console.log(`👥 Сотрудников с лидами: ${Object.keys(leadsByEmployee).length}`);
+    
+    const employeeAnalytics = [];
+    let totalMeetingsHeld = 0;
+    let totalLeadsCount = 0;
+    
+    // Анализируем каждого сотрудника
+    for (const [currentEmployeeId, employeeLeads] of Object.entries(leadsByEmployee)) {
+      if (currentEmployeeId === 'NO_EMPLOYEE') continue; // Пропускаем лиды без ответственного
+      
+      console.log(`\n👤 Анализ сотрудника: ${currentEmployeeId} (${employeeLeads.length} лидов)`);
+      
+      const employee = employeeNames[currentEmployeeId] || {
+        id: currentEmployeeId,
+        name: `Сотрудник ${currentEmployeeId}`,
+        email: '',
+        position: '',
+        active: true
+      };
+      
+      // Общая статистика сотрудника
+      const stageAnalysis = calculateStageAnalysis(employeeLeads);
+      const employeeMeetingsHeld = countMeetingsFromLeadStatus(employeeLeads);
+      const employeeMeetingsScheduled = stageAnalysis.meetingsScheduled + employeeMeetingsHeld;
+      const employeeCommunication = stageAnalysis.communication + stageAnalysis.noResponse + stageAnalysis.longNoCall;
+      const employeeJunk = stageAnalysis.junk;
+      
+      // Анализ источников для сотрудника
+      const sourceAnalytics = analyzeEmployeeSources(employeeLeads, sourceNames);
+      
+      const employeeData = {
+        employee: {
+          id: currentEmployeeId,
+          name: employee.name,
+          email: employee.email,
+          position: employee.position,
+          active: employee.active,
+          totalLeads: employeeLeads.length,
+          totalMeetingsHeld: employeeMeetingsHeld,
+          totalMeetingsScheduled: employeeMeetingsScheduled,
+          totalCommunication: employeeCommunication,
+          totalJunk: employeeJunk,
+          overallConversion: employeeLeads.length > 0 ? ((employeeMeetingsHeld / employeeLeads.length) * 100).toFixed(1) : '0.0',
+          meetingsFromScheduledConversion: employeeMeetingsScheduled > 0 ? ((employeeMeetingsHeld / employeeMeetingsScheduled) * 100).toFixed(1) : '0.0'
+        },
+        sources: sourceAnalytics
+      };
+      
+      employeeAnalytics.push(employeeData);
+      totalMeetingsHeld += employeeMeetingsHeld;
+      totalLeadsCount += employeeLeads.length;
+      
+      console.log(`👤 ИТОГИ для "${employee.name}":
+  Лидов: ${employeeLeads.length}
+  Встреч: ${employeeMeetingsHeld}
+  Источников: ${sourceAnalytics.length}
+  Конверсия: ${employeeData.employee.overallConversion}%`);
+    }
+    
+    // Сортируем сотрудников по количеству встреч (по убыванию)
+    employeeAnalytics.sort((a, b) => b.employee.totalMeetingsHeld - a.employee.totalMeetingsHeld);
+    
+    const processingTime = Date.now() - startTime;
+    console.log(`✅ Аналитика по сотрудникам обработана за ${processingTime}ms`);
+    console.log(`👥 ИТОГО: ${employeeAnalytics.length} сотрудников, ${totalLeadsCount} лидов, ${totalMeetingsHeld} встреч`);
+    
+    res.json({
+      success: true,
+      data: employeeAnalytics,
+      period: dateRange,
+      totalLeads: totalLeadsCount,
+      totalEmployees: employeeAnalytics.length,
+      totalMeetingsHeld,
+      averageConversion: totalLeadsCount > 0 ? ((totalMeetingsHeld / totalLeadsCount) * 100).toFixed(1) : '0.0',
+      processingTime,
+      note: `Анализ ${employeeAnalytics.length} сотрудников с ${totalLeadsCount} лидами`,
+      debug: {
+        filters,
+        dateRange,
+        originalLeadsCount: leads.length,
+        filteredLeadsCount: filteredLeads.length,
+        totalEmployeesInSystem: Object.keys(employeeNames).length,
+        employeesWithLeads: employeeAnalytics.length,
+        leadsWithoutEmployee: leadsByEmployee['NO_EMPLOYEE']?.length || 0,
+        appliedFilters: {
+          period,
+          sourceId: sourceId || 'all',
+          employeeId: employeeId || 'all'
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Ошибка получения аналитики по сотрудникам:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Ошибка получения аналитики по сотрудникам'
+    });
+  }
+}
+
+
 module.exports = {
   getSources,
   syncSources,
   getLeadsAnalytics,
+  getEmployeesAnalytics,
   getLeadStages,
   fixSourceIds,
   getDealCategories
