@@ -1,4 +1,4 @@
-// bitrix/bitrixService.js - OAuth версия с улучшенным получением сделок
+// bitrix/bitrixService.js - OAuth версия с ИСПРАВЛЕННОЙ пагинацией
 const axios = require('axios');
 const bitrixTokenManager = require('../utils/bitrixTokenManager');
 
@@ -75,7 +75,7 @@ async function getLeadSources() {
 }
 
 /**
- * ИСПРАВЛЕННАЯ функция получения лидов БЕЗ ЛИМИТОВ
+ * ИСПРАВЛЕННАЯ функция получения лидов с правильной пагинацией
  */
 async function getLeads(filters = {}, select = [], maxLeads = null) {
   try {
@@ -112,8 +112,6 @@ async function getLeads(filters = {}, select = [], maxLeads = null) {
     const seenLeadIds = new Set(); // Отслеживаем уже добавленные ID
     let start = 0;
     const limit = 50;
-    let emptyPages = 0;
-    const maxEmptyPages = 5; // Увеличиваем количество пустых страниц
 
     // Получаем ВСЕ лиды без жестких ограничений
     while (true) {
@@ -133,23 +131,6 @@ async function getLeads(filters = {}, select = [], maxLeads = null) {
 
       const currentBatch = data.result || [];
       
-      // Если страница пустая
-      if (currentBatch.length === 0) {
-        emptyPages++;
-        console.log(`📄 Пустая страница ${Math.floor(start/limit) + 1} (${emptyPages}/${maxEmptyPages})`);
-        
-        if (emptyPages >= maxEmptyPages) {
-          console.log('📋 Достигнут конец списка - много пустых страниц подряд');
-          break;
-        }
-        
-        start += limit;
-        continue;
-      }
-      
-      // Сброс счетчика пустых страниц
-      emptyPages = 0;
-      
       // Добавляем уникальные лиды (дедупликация)
       const uniqueLeadsInBatch = [];
       let duplicatesInBatch = 0;
@@ -167,15 +148,23 @@ async function getLeads(filters = {}, select = [], maxLeads = null) {
       
       console.log(`📄 Страница ${Math.floor(start/limit) + 1}: получено ${currentBatch.length} лидов, уникальных: ${uniqueLeadsInBatch.length}, дублей: ${duplicatesInBatch}, всего: ${allLeads.length}`);
       
-      // Если получили меньше лимита - это последняя страница
-      if (currentBatch.length < limit) {
-        console.log('📋 Достигнут конец списка лидов (страница неполная)');
-        break;
+      // ИСПРАВЛЕНО: Используем поле 'next' из ответа API для определения конца
+      if (data.next !== undefined) {
+        start = data.next;
+        console.log(`➡️ Следующая позиция: ${start}`);
+      } else {
+        // Если нет поля next, но получили полную страницу - продолжаем
+        if (currentBatch.length === limit) {
+          start += limit;
+          console.log(`➡️ Нет поля next, но страница полная. Продолжаем с позиции: ${start}`);
+        } else {
+          // Страница неполная и нет next - это конец
+          console.log('📋 Достигнут конец списка лидов');
+          break;
+        }
       }
       
-      start += limit;
-      
-      // Увеличиваем защиту от бесконечного цикла до 10000
+      // Защита от бесконечного цикла
       if (start >= 10000) {
         console.warn(`⚠️ Достигнут максимальный лимит запросов: ${start}`);
         break;
@@ -451,13 +440,19 @@ async function getDeals(filters = {}, select = [], limit = 500) {
       
       console.log(`📄 Получено сделок: ${currentBatch.length}, всего: ${allDeals.length}`);
       
-      // Если получили меньше лимита - значит это последняя страница
-      if (currentBatch.length < batchLimit) {
-        console.log('📋 Достигнут конец списка сделок');
-        break;
+      // ИСПРАВЛЕНО: Используем поле next для пагинации
+      if (data.next !== undefined) {
+        start = data.next;
+      } else {
+        // Если нет поля next, но получили полную страницу - продолжаем
+        if (currentBatch.length === batchLimit) {
+          start += batchLimit;
+        } else {
+          // Страница неполная и нет next - это конец
+          console.log('📋 Достигнут конец списка сделок');
+          break;
+        }
       }
-      
-      start += batchLimit;
       
       // Защита от бесконечного цикла
       if (start >= 5000) {
@@ -574,17 +569,97 @@ async function getCustomFields(entityType = 'LEAD') {
   }
 }
 
+/**
+ * Обновление лида
+ */
+async function updateLead(leadId, fields) {
+  try {
+    console.log(`🔄 Обновление лида ${leadId}`);
+    
+    const data = await bitrixRequest('crm.lead.update', {
+      id: leadId,
+      fields: fields
+    });
+
+    console.log(`✅ Лид ${leadId} обновлен`);
+    return data.result;
+
+  } catch (error) {
+    console.error(`❌ Ошибка updateLead для лида ${leadId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Получение источников (совместимость со старым кодом)
+ */
+async function getSources() {
+  return getLeadSources();
+}
+
+/**
+ * Получение списка пользователей (сотрудников) из Bitrix24
+ * Добавить в bitrix/bitrixService.js
+ */
+async function getUsers(filters = {}) {
+  try {
+    console.log('👥 Запрос пользователей из Bitrix24');
+    
+    const params = {
+      select: [
+        'ID',
+        'NAME', 
+        'LAST_NAME',
+        'EMAIL',
+        'ACTIVE',
+        'WORK_POSITION',
+        'UF_DEPARTMENT'
+      ],
+      filter: {
+        ACTIVE: 'Y', // Только активные пользователи
+        ...filters
+      }
+    };
+    
+    console.log('🔍 Параметры запроса пользователей:', params);
+    
+    const response = await makeRequest('user.get', params);
+    
+    if (response && response.result) {
+      console.log(`✅ Получено пользователей: ${response.result.length}`);
+      console.log('👥 Примеры пользователей:', response.result.slice(0, 3).map(user => ({
+        id: user.ID,
+        name: `${user.NAME} ${user.LAST_NAME}`.trim(),
+        position: user.WORK_POSITION,
+        active: user.ACTIVE
+      })));
+      
+      return response.result;
+    }
+    
+    console.warn('⚠️ Нет данных о пользователях в ответе Bitrix24');
+    return [];
+    
+  } catch (error) {
+    console.error('❌ Ошибка получения пользователей из Bitrix24:', error);
+    throw error;
+  }
+}
+
 // Экспорт ВСЕХ функций включая исправленную getLeads
 module.exports = {
   bitrixRequest,
   getLeadSources,
-  getLeads,           // ← ИСПРАВЛЕННАЯ ФУНКЦИЯ БЕЗ ЛИМИТОВ
+  getSources,         // Для совместимости
+  getLeads,           // ← ИСПРАВЛЕННАЯ ФУНКЦИЯ С ПРАВИЛЬНОЙ ПАГИНАЦИЕЙ
   getLeadStages,
   getLead,
+  updateLead,
   getDealsByLead,
   getDealsByContact,  
-  getDeals,           
+  getDeals,           // ← ТАКЖЕ ИСПРАВЛЕНА ПАГИНАЦИЯ
   getDealCategories,  
   getCustomFields,
-  enrichLeadsWithSourceNames
+  enrichLeadsWithSourceNames,
+  getUsers
 };
