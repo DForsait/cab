@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Filter, RefreshCw, Users, TrendingUp, Calendar as CalendarIcon, BarChart3 } from 'lucide-react';
+import { Calendar, Filter, RefreshCw, Users, TrendingUp, BarChart3 } from 'lucide-react';
 import '../components/StickyTable.css';
 
 interface AnalyticsData {
@@ -201,6 +201,11 @@ const LeadsAnalyticsDashboard: React.FC = () => {
   const totalMeetingsHeld = analytics?.totalMeetingsHeld || 0;
   const totalMeetingsScheduled = analyticsData.reduce((sum, item) => sum + (item.meetingsScheduled || 0), 0);
   const totalSources = analyticsData.length;
+  
+  // Конверсия из назначенной в состоявшуюся (общая)
+  const overallScheduledToHeldConversion = totalMeetingsScheduled > 0 
+    ? Math.round((totalMeetingsHeld / totalMeetingsScheduled) * 100)
+    : 0;
 
   const getConversionColor = (value: string) => {
     const numValue = parseFloat(value);
@@ -350,8 +355,8 @@ const LeadsAnalyticsDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Статистика */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        {/* Статистика - 5 ПЛИТОК */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
           <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500">
             <div className="flex items-center">
               <div className="p-2 bg-blue-100 rounded-lg mr-4">
@@ -385,7 +390,7 @@ const LeadsAnalyticsDashboard: React.FC = () => {
           <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-orange-500">
             <div className="flex items-center">
               <div className="p-2 bg-orange-100 rounded-lg mr-4">
-                <CalendarIcon className="w-6 h-6 text-orange-600" />
+                <Calendar className="w-6 h-6 text-orange-600" />
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-600">Встреч назначено</p>
@@ -412,6 +417,21 @@ const LeadsAnalyticsDashboard: React.FC = () => {
                     {Math.round((totalMeetingsHeld / totalLeads) * 100)}% конверсия
                   </p>
                 )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-indigo-500">
+            <div className="flex items-center">
+              <div className="p-2 bg-indigo-100 rounded-lg mr-4">
+                <Calendar className="w-6 h-6 text-indigo-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-600">CR назнач → состоялась</p>
+                <p className="text-2xl font-bold text-gray-900">{overallScheduledToHeldConversion}%</p>
+                <p className="text-xs text-gray-500">
+                  {totalMeetingsHeld}/{totalMeetingsScheduled} встреч
+                </p>
               </div>
             </div>
           </div>
