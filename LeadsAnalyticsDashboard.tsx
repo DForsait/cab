@@ -13,6 +13,7 @@ interface AnalyticsData {
   meetingsScheduledConversion: string;
   meetingsHeld: number;
   meetingsHeldConversion: string;
+  meetingsHeldFromScheduledConversion: string;
   junk: number;
   junkPercent: string;
   under250k: number;
@@ -264,13 +265,12 @@ const LeadsAnalyticsDashboard: React.FC = () => {
   const totalMeetingsScheduled = analyticsData.reduce((sum, item) => sum + (item.meetingsScheduled || 0), 0);
   const totalSources = analyticsData.length;
 
-  const getConversionColor = (value: string) => {
+    const getConversionColor = (value: string) => {
     const numValue = parseFloat(value);
-    if (numValue >= 20) return 'text-green-600';
-    if (numValue >= 10) return 'text-yellow-600';
+    if (numValue >= 50) return 'text-green-600';
+    if (numValue >= 20) return 'text-yellow-600';
     return 'text-red-600';
   };
-
   const getMeetingsColor = (value: number) => {
     if (value > 0) return 'bg-green-100 text-green-800';
     return 'bg-gray-100 text-gray-800';
@@ -534,68 +534,35 @@ const LeadsAnalyticsDashboard: React.FC = () => {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => handleSort('sourceName')}
-                    >
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       ID и название источника
-                      {sortField === 'sourceName' && (
-                        <span className="ml-1 text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
                     </th>
-                    <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => handleSort('totalLeads')}
-                    >
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Количество лидов, шт
-                      {sortField === 'totalLeads' && (
-                        <span className="ml-1 text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
                     </th>
-                    <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => handleSort('comments')}
-                    >
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Комм. установлена
-                      {sortField === 'comments' && (
-                        <span className="ml-1 text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       CR в комм.
                     </th>
-                    <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => handleSort('meetingsScheduled')}
-                    >
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Назначено встреч
-                      {sortField === 'meetingsScheduled' && (
-                        <span className="ml-1 text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       CR в назначи.
                     </th>
-                    <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => handleSort('meetingsHeld')}
-                    >
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Состоялись встречи
-                      {sortField === 'meetingsHeld' && (
-                        <span className="ml-1 text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       CR в состоявш.
                     </th>
-                    <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                      onClick={() => handleSort('junk')}
-                    >
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      CR из назначенной в состоявш.
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Кол-во брака
-                      {sortField === 'junk' && (
-                        <span className="ml-1 text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       % в брак
@@ -604,15 +571,13 @@ const LeadsAnalyticsDashboard: React.FC = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {sortedData.map((item, index) => (
-                    <tr key={`${item.sourceId}-${index}`} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div className="font-medium">{item.sourceName}</div>
-                        <div className="text-gray-500 text-xs">{item.sourceId}</div>
+                    <tr key={item.sourceId} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{item.sourceName}</div>
+                        <div className="text-sm text-gray-500">{item.sourceId}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {item.totalLeads}
-                        </span>
+                        {item.totalLeads}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {item.comments}
@@ -627,17 +592,16 @@ const LeadsAnalyticsDashboard: React.FC = () => {
                         {item.meetingsScheduledConversion}%
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getMeetingsColor(item.meetingsHeld)}`}>
-                          {item.meetingsHeld}
-                        </span>
+                        {item.meetingsHeld}
                       </td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsHeldConversion)}`}>
                         {item.meetingsHeldConversion}%
                       </td>
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsHeldFromScheduledConversion)}`}>
+                        {item.meetingsHeldFromScheduledConversion}%
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {item.junk}
-                        </span>
+                        {item.junk}
                       </td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.junkPercent)}`}>
                         {item.junkPercent}%
