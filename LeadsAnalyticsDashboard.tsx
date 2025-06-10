@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Filter, RefreshCw, Users, TrendingUp, Calendar as CalendarIcon, BarChart3 } from 'lucide-react';
+import '../components/StickyTable.css';
 
 interface AnalyticsData {
   sourceId: string;
@@ -267,10 +268,10 @@ const LeadsAnalyticsDashboard: React.FC = () => {
 
     const getConversionColor = (value: string) => {
     const numValue = parseFloat(value);
-    if (numValue >= 50) return 'text-green-600';
-    if (numValue >= 20) return 'text-yellow-600';
-    return 'text-red-600';
-  };
+    if (numValue >= 50) return 'conversion-high';
+    if (numValue >= 20) return 'conversion-medium';
+    return 'conversion-low';
+  }
   const getMeetingsColor = (value: number) => {
     if (value > 0) return 'bg-green-100 text-green-800';
     return 'bg-gray-100 text-gray-800';
@@ -530,86 +531,94 @@ const LeadsAnalyticsDashboard: React.FC = () => {
               <p className="text-gray-500">Нет данных для отображения</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      ID и название источника
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Количество лидов, шт
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Комм. установлена
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      CR в комм.
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Назначено встреч
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      CR в назначи.
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Состоялись встречи
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      CR в состоявш.
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      CR из назначенной в состоявш.
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Кол-во брака
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      % в брак
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {sortedData.map((item, index) => (
-                    <tr key={item.sourceId} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{item.sourceName}</div>
-                        <div className="text-sm text-gray-500">{item.sourceId}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {item.totalLeads}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.comments}
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.commentsConversion)}`}>
-                        {item.commentsConversion}%
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.meetingsScheduled}
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsScheduledConversion)}`}>
-                        {item.meetingsScheduledConversion}%
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.meetingsHeld}
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsHeldConversion)}`}>
-                        {item.meetingsHeldConversion}%
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsHeldFromScheduledConversion)}`}>
-                        {item.meetingsHeldFromScheduledConversion}%
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.junk}
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.junkPercent)}`}>
-                        {item.junkPercent}%
-                      </td>
+            // НОВЫЙ контейнер с закрепленными заголовками
+            <div className="relative">
+              <div className="overflow-auto max-h-[calc(100vh-500px)]" style={{ maxHeight: '600px' }}>
+                <table className="w-full">
+                  {/* ЗАКРЕПЛЕННЫЙ ЗАГОЛОВОК */}
+                  <thead className="bg-gray-50 sticky top-0 z-20">
+                    <tr>
+                      {/* ЗАКРЕПЛЕННЫЙ ПЕРВЫЙ СТОЛБЕЦ */}
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-30 border-r border-gray-200">
+                        ID и название источника
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">
+                        Количество лидов, шт
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">
+                        Комм. установлена
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-24">
+                        CR в комм.
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">
+                        Назначено встреч
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-24">
+                        CR в назначи.
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">
+                        Состоялись встречи
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-24">
+                        CR в состоявш.
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-36">
+                        CR из назначенной в состоявш.
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-28">
+                        Кол-во брака
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-24">
+                        % в брак
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  
+                  {/* ТЕЛО ТАБЛИЦЫ */}
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {sortedData.map((item, index) => (
+                      <tr key={item.sourceId} className={index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50 hover:bg-gray-100'}>
+                        {/* ЗАКРЕПЛЕННЫЙ ПЕРВЫЙ СТОЛБЕЦ */}
+                        <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-inherit z-10 border-r border-gray-200">
+                          <div className="text-sm font-medium text-gray-900">{item.sourceName}</div>
+                          <div className="text-sm text-gray-500">{item.sourceId}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {item.totalLeads}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.comments}
+                        </td>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.commentsConversion)}`}>
+                          {item.commentsConversion}%
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.meetingsScheduled}
+                        </td>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsScheduledConversion)}`}>
+                          {item.meetingsScheduledConversion}%
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.meetingsHeld}
+                        </td>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsHeldConversion)}`}>
+                          {item.meetingsHeldConversion}%
+                        </td>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.meetingsHeldFromScheduledConversion)}`}>
+                          {item.meetingsHeldFromScheduledConversion}%
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.junk}
+                        </td>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getConversionColor(item.junkPercent)}`}>
+                          {item.junkPercent}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
