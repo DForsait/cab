@@ -13,6 +13,6 @@ router.post('/fix-source-ids', dashboardController.fixSourceIds);
 router.get('/deal-categories', dashboardController.getDealCategories);
 
 // НОВЫЙ РОУТ для аналитики по сотрудникам
-//router.get('/staff-analytics', getEmployeesAnalytics);
+router.get('/employees-analytics', dashboardController.getEmployeesAnalytics);
 
 module.exports = router;
