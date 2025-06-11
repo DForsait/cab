@@ -605,43 +605,87 @@ async function getUsers(filters = {}) {
   try {
     console.log('👥 Запрос пользователей из Bitrix24');
     
-    const params = {
-      select: [
-        'ID',
-        'NAME', 
-        'LAST_NAME',
-        'EMAIL',
-        'ACTIVE',
-        'WORK_POSITION',
-        'UF_DEPARTMENT'
-      ]
-      // Убираем фильтр ACTIVE - получаем всех пользователей
-    };
+    // Получаем ВСЕХ пользователей без фильтра активности
+    let allUsers = [];
+    let start = 0;
+    const limit = 50;
     
-    console.log('🔍 Параметры запроса пользователей:', params);
-    
-    // ИСПРАВЛЕНО: bitrixRequest вместо makeRequest
-    const response = await bitrixRequest('user.get', params);
-    
-    if (response && response.result) {
-      console.log(`✅ Получено пользователей: ${response.result.length}`);
-      console.log('👥 Примеры пользователей:', response.result.slice(0, 3).map(user => ({
-        id: user.ID,
-        name: `${user.NAME} ${user.LAST_NAME}`.trim(),
-        position: user.WORK_POSITION,
-        active: user.ACTIVE
-      })));
+    while (true) {
+      const params = {
+        select: [
+          'ID',
+          'NAME', 
+          'LAST_NAME',
+          'EMAIL',
+          'ACTIVE',
+          'WORK_POSITION',
+          'UF_DEPARTMENT'
+        ],
+        filter: {
+          ...filters
+          // УБИРАЕМ ACTIVE: 'Y' - получаем всех пользователей
+        },
+        start: start,
+        limit: limit
+      };
       
-      return response.result;
+      const response = await bitrixRequest('user.get', params);
+      
+      if (response && response.result && response.result.length > 0) {
+        allUsers = allUsers.concat(response.result);
+        console.log(`📄 Загружено пользователей: ${response.result.length}, всего: ${allUsers.length}`);
+        
+        // Если получили меньше лимита - это последняя страница
+        if (response.result.length < limit) {
+          break;
+        }
+        
+        start += limit;
+      } else {
+        break;
+      }
     }
     
-    console.warn('⚠️ Нет данных о пользователях в ответе Bitrix24');
-    return [];
+    console.log(`✅ Получено пользователей всего: ${allUsers.length}`);
     
+    // Выводим примеры пользователей
+    console.log('👥 Примеры пользователей:', allUsers.slice(0, 5).map(user => ({
+      id: user.ID,
+      name: `${user.NAME || ''} ${user.LAST_NAME || ''}`.trim(),
+      position: user.WORK_POSITION,
+      active: user.ACTIVE
+    })));
+    
+    return allUsers;
   } catch (error) {
-    console.error('❌ Ошибка получения пользователей из Bitrix24:', error);
+    console.error('❌ Ошибка получения пользователей:', error);
     return [];
   }
+}
+
+// Функция поиска сотрудника по ID
+function findEmployeeById(employeeId, allUsers) {
+  const user = allUsers.find(u => u.ID === employeeId);
+  
+  if (user) {
+    const name = `${user.NAME || ''} ${user.LAST_NAME || ''}`.trim();
+    return {
+      id: user.ID,
+      name: name || `Пользователь ${employeeId}`,
+      position: user.WORK_POSITION || '',
+      active: user.ACTIVE === 'Y',
+      email: user.EMAIL || ''
+    };
+  }
+  
+  console.log(`⚠️ Сотрудник ${employeeId} не найден среди ${allUsers.length} пользователей`);
+  return {
+    id: employeeId,
+    name: `Сотрудник ${employeeId}`,
+    position: '',
+    active: false,
+    email: ''
+  };
 }
 
 // Экспорт ВСЕХ функций включая исправленную getLeads
