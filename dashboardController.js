@@ -976,6 +976,8 @@ async function getEmployeesAnalytics(req, res) {
       debug: {
         filters,
         dateRange,
+        // 🎯 ДОБАВЛЕНО: actualPeriod для совместимости с frontend
+        actualPeriod: period === 'custom' ? `${startDate} — ${endDate}` : period,
         originalLeadsCount: leads.length,
         filteredLeadsCount: filteredLeads.length,
         totalEmployeesInSystem: Object.keys(employeeNames).length,
