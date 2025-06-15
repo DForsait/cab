@@ -691,7 +691,7 @@ async function fixSourceIds(req, res) {
 /**
  * Получение воронок сделок
  */
-async function getDealCategories(req, res) {
+/*async function getDealCategories(req, res) {
   try {
     console.log('📊 Запрос воронок сделок');
     
@@ -711,7 +711,7 @@ async function getDealCategories(req, res) {
       error: 'Ошибка получения воронок сделок'
     });
   }
-}
+}*/
 
 /**
  * 👥 ФУНКЦИИ ДЛЯ АНАЛИТИКИ СОТРУДНИКОВ
@@ -1000,6 +1000,67 @@ async function getEmployeesAnalytics(req, res) {
   }
 }
 
+/**
+ * Получение аналитики продаж
+ */
+async function getSalesAnalytics(req, res) {
+  try {
+    const startTime = Date.now();
+    console.log('💰 Запрос аналитики продаж');
+    
+    // Получаем параметры (те же что и для основной аналитики)
+    const { period = 'week', sourceId, startDate, endDate } = req.query;
+    
+    // ИСПОЛЬЗУЕМ УЖЕ СУЩЕСТВУЮЩУЮ функцию из вашего файла
+    const dateRange = getPeriodDates(period, startDate, endDate);
+    const filters = {
+      startDate: dateRange.start,
+      endDate: dateRange.end
+    };
+    
+    console.log('💰 Фильтры для продаж:', filters);
+    
+    // Получаем данные о продажах
+    const salesData = await bitrixService.getSalesAnalytics(filters);
+    
+    if (!salesData.success) {
+      return res.status(500).json({
+        success: false,
+        error: salesData.error
+      });
+    }
+
+    // Фильтруем по источнику если указан
+    let filteredData = salesData.data;
+    if (sourceId && sourceId !== 'all') {
+      filteredData = salesData.data.filter(item => item.sourceId === sourceId);
+    }
+
+    const processingTime = Date.now() - startTime;
+    
+    res.json({
+      success: true,
+      data: filteredData,
+      totals: salesData.totals,
+      processingTime: processingTime + 'ms',
+      debug: {
+        ...salesData.debug,
+        period: period,
+        filters: filters,
+        actualPeriod: period === 'custom' ? `${startDate} — ${endDate}` : period,
+        appliedSourceFilter: sourceId || 'all'
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Ошибка аналитики продаж:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
 
 module.exports = {
   getSources,
@@ -1008,5 +1069,6 @@ module.exports = {
   getEmployeesAnalytics,
   getLeadStages,
   fixSourceIds,
-  getDealCategories
+  //getDealCategories,
+  getSalesAnalytics
 };

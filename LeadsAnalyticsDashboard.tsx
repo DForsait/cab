@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Filter, RefreshCw, Users, TrendingUp, BarChart3 } from 'lucide-react';
+import { Calendar, Filter, RefreshCw, Users, TrendingUp, BarChart3, DollarSign } from 'lucide-react';
+import EmployeesAnalytics from './EmployeesAnalytics';
+import SalesAnalyticsDashboard from './SalesAnalyticsDashboard';
 import '../components/StickyTable.css';
 
 interface AnalyticsData {
@@ -70,6 +72,9 @@ const LeadsAnalyticsDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof AnalyticsData>('totalLeads');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  // СОСТОЯНИЕ ДЛЯ ПОКАЗА КОМПОНЕНТОВ
+  const [showEmployees, setShowEmployees] = useState(false);
 
   // Загрузка источников
   useEffect(() => {
@@ -452,7 +457,7 @@ const LeadsAnalyticsDashboard: React.FC = () => {
         </div>
 
         {/* ТАБЛИЦА С ЗАКРЕПЛЕННЫМИ ЭЛЕМЕНТАМИ */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden mb-6">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <RefreshCw className="w-8 h-8 animate-spin text-blue-600 mr-3" />
@@ -474,7 +479,7 @@ const LeadsAnalyticsDashboard: React.FC = () => {
             <div className="flex items-center justify-center py-12">
               <p className="text-gray-500">Нет данных для отображения</p>
             </div>
-          ) : (
+            ) : (
             <div className="relative">
               <div 
                 className="overflow-auto" 
@@ -588,6 +593,45 @@ const LeadsAnalyticsDashboard: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+
+        {/* БЛОК АНАЛИТИКИ ПО КОНТАКТ-ЦЕНТРУ */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="border-l-4 border-blue-500 pl-4 mb-4">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">
+              Аналитика по контакт-центру
+            </h2>
+            <p className="text-gray-600 mb-4">
+              Получите детальную статистику работы каждого сотрудника с разбивкой по источникам трафика
+            </p>
+            <button
+              onClick={() => setShowEmployees(!showEmployees)}
+              className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              <Users className="w-5 h-5" />
+              {showEmployees ? 'Скрыть аналитику по КЦ' : 'Получить аналитику по КЦ'}
+            </button>
+          </div>
+          
+          {/* КОМПОНЕНТ СОТРУДНИКОВ КЦ */}
+          {showEmployees && (
+            <div className="mt-6">
+              <EmployeesAnalytics 
+                period={period}
+                sourceId={sourceId}
+                customStartDate={customStartDate}
+                customEndDate={customEndDate}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* КОМПОНЕНТ ПРОДАЖ */}
+        <div className="mt-8">
+          <SalesAnalyticsDashboard 
+            startDate={customStartDate || '2025-06-01'} 
+            endDate={customEndDate || '2025-06-07'} 
+          />
         </div>
 
         {/* Debug информация */}

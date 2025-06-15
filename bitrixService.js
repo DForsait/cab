@@ -489,7 +489,7 @@ async function getDeals(filters = {}, select = [], limit = 500) {
 /**
  * НОВЫЙ метод: Получение воронок (категорий) сделок
  */
-async function getDealCategories() {
+/*async function getDealCategories() {
   try {
     console.log('🔍 Запрос воронок сделок из Bitrix24');
     
@@ -516,7 +516,7 @@ async function getDealCategories() {
     console.error('❌ Ошибка получения воронок сделок:', error);
     return [];
   }
-}
+}*/
 
 /**
  * Обогащение лидов названиями источников
@@ -688,6 +688,375 @@ function findEmployeeById(employeeId, allUsers) {
   };
 }
 
+// Оптимизированная функция связывания продаж с источниками (быстрая версия)
+/*async function linkSalesToSources(sales, leads) {
+  console.log(`🔗 Связываем ${sales.length} продаж с ${leads.length} лидами`);
+  const enrichedLeads = await enrichLeadsWithSourceNames(leads);
+  
+  // 1. БЫСТРЫЙ ИНДЕКС ЛИДОВ ПО CONTACT_ID (только самый ранний лид каждого контакта)
+  const earliestLeadByContact = {};
+  
+  enrichedLeads.forEach(lead => {
+    if (lead.CONTACT_ID) {
+      const existing = earliestLeadByContact[lead.CONTACT_ID];
+      if (!existing || new Date(lead.DATE_CREATE) < new Date(existing.DATE_CREATE)) {
+        earliestLeadByContact[lead.CONTACT_ID] = lead;
+      }
+    }
+  });
+
+  console.log(`📋 Индекс создан: ${Object.keys(earliestLeadByContact).length} контактов`);
+
+  // 2. БЫСТРОЕ СВЯЗЫВАНИЕ
+  const linkedSales = sales.map(sale => {
+    const contactId = sale.CONTACT_ID;
+    const earliestLead = contactId ? earliestLeadByContact[contactId] : null;
+    
+    if (earliestLead) {
+      return {
+        ...sale,
+        amount: parseFloat(sale.OPPORTUNITY || 0),
+        sourceId: earliestLead.SOURCE_ID || 'UNKNOWN',
+        sourceName: earliestLead.SOURCE_NAME || 'Неизвестный источник',
+        linkMethod: 'CONTACT_ID',
+        linkedLeadId: earliestLead.ID
+      };
+    } else {
+      return {
+        ...sale,
+        amount: parseFloat(sale.OPPORTUNITY || 0),
+        sourceId: 'UNKNOWN',
+        sourceName: 'Неизвестный источник',
+        linkMethod: contactId ? 'NO_LEADS_FOUND' : 'NO_CONTACT'
+      };
+    }
+  });
+
+  // 3. БЫСТРАЯ СТАТИСТИКА
+  const linked = linkedSales.filter(s => s.sourceId !== 'UNKNOWN').length;
+  const successRate = sales.length > 0 ? Math.round((linked / sales.length) * 100) : 0;
+  
+  console.log(`📊 Связано: ${linked}/${sales.length} (${successRate}%)`);
+
+  return {
+    sales: linkedSales,
+    stats: {
+      successRate: successRate,
+      totalLinked: linked,
+      byMethod: { 'CONTACT_ID': linked }
+    }
+  };
+}*/
+
+/**
+ * НОВАЯ ФУНКЦИЯ - ЗАГРУЗКА ЛИДОВ ПО СПИСКУ CONTACT_ID
+ */
+async function getLeadsByContactIds(contactIds) {
+  try {
+    console.log(`🔍 Загружаем лиды для ${contactIds.length} контактов`);
+    
+    const allLeads = [];
+    const batchSize = 50; // Битрикс ограничивает фильтры
+    
+    // Обрабатываем контакты батчами
+    for (let i = 0; i < contactIds.length; i += batchSize) {
+      const batch = contactIds.slice(i, i + batchSize);
+      console.log(`📦 Обрабатываем батч ${Math.floor(i/batchSize) + 1}: контакты ${i + 1}-${Math.min(i + batchSize, contactIds.length)}`);
+      
+      // Для каждого контакта ищем его лиды
+      const batchPromises = batch.map(async (contactId) => {
+        const contactLeads = await getLeads({
+          'CONTACT_ID': contactId
+        });
+        return contactLeads || [];
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      batchResults.forEach(leads => allLeads.push(...leads));
+    }
+    
+    console.log(`✅ Загружено ${allLeads.length} лидов для ${contactIds.length} контактов`);
+    return allLeads;
+    
+  } catch (error) {
+    console.error('❌ Ошибка загрузки лидов по контактам:', error);
+    return [];
+  }
+}
+
+/**
+ * ОПТИМИЗИРОВАННАЯ ФУНКЦИЯ СВЯЗЫВАНИЯ С ДАТАМИ И ЦИКЛОМ СДЕЛКИ
+ */
+async function linkSalesToSourcesOptimized(sales, leads) {
+  console.log(`🔗 ОПТИМИЗИРОВАННОЕ связывание ${sales.length} продаж с ${leads.length} лидами`);
+  
+  // Обогащаем только найденные лиды (намного быстрее!)
+  const enrichedLeads = await enrichLeadsWithSourceNames(leads);
+  
+  // 1. БЫСТРЫЙ ИНДЕКС ЛИДОВ ПО CONTACT_ID (только самый ранний лид каждого контакта)
+  const earliestLeadByContact = {};
+  
+  enrichedLeads.forEach(lead => {
+    if (lead.CONTACT_ID) {
+      const existing = earliestLeadByContact[lead.CONTACT_ID];
+      if (!existing || new Date(lead.DATE_CREATE) < new Date(existing.DATE_CREATE)) {
+        earliestLeadByContact[lead.CONTACT_ID] = lead;
+      }
+    }
+  });
+  
+  console.log(`📋 Индекс создан: ${Object.keys(earliestLeadByContact).length} контактов`);
+
+  // 2. ФУНКЦИЯ РАСЧЕТА ЦИКЛА СДЕЛКИ
+  const calculateDealCycle = (leadDate, saleDate) => {
+    if (!leadDate || !saleDate) return null;
+    
+    const lead = new Date(leadDate);
+    const sale = new Date(saleDate);
+    const diffMs = sale - lead;
+    
+    if (diffMs < 0) return "Ошибка дат";
+    
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    if (diffDays === 0) {
+      if (diffHours === 0) {
+        const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        return `${diffMinutes} мин`;
+      }
+      return `${diffHours} ч`;
+    }
+    
+    if (diffDays < 30) {
+      return `${diffDays} дн`;
+    }
+    
+    const diffMonths = Math.floor(diffDays / 30);
+    return `${diffMonths} мес`;
+  };
+
+  // 3. ФОРМАТИРОВАНИЕ ДАТЫ ДЛЯ ОТОБРАЖЕНИЯ
+  const formatDisplayDate = (dateString) => {
+    if (!dateString) return "Нет данных";
+    
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    } catch (error) {
+      return "Некорректная дата";
+    }
+  };
+
+  // 4. БЫСТРОЕ СВЯЗЫВАНИЕ С РАСЧЕТОМ ДАТ И ЦИКЛА
+  const linkedSales = sales.map(sale => {
+    const contactId = sale.CONTACT_ID;
+    const earliestLead = contactId ? earliestLeadByContact[contactId] : null;
+    
+    if (earliestLead) {
+      const leadDate = earliestLead.DATE_CREATE;
+      const saleDate = sale.DATE_CREATE;
+      const dealCycle = calculateDealCycle(leadDate, saleDate);
+      
+      return {
+        ...sale,
+        amount: parseFloat(sale.OPPORTUNITY || 0),
+        sourceId: earliestLead.SOURCE_ID || 'UNKNOWN',
+        sourceName: earliestLead.SOURCE_NAME || 'Неизвестный источник',
+        linkMethod: 'CONTACT_ID',
+        linkedLeadId: earliestLead.ID,
+        // НОВЫЕ ПОЛЯ ДЛЯ ТАБЛИЦЫ
+        leadDate: leadDate,
+        leadDateFormatted: formatDisplayDate(leadDate),
+        saleDate: saleDate,
+        saleDateFormatted: formatDisplayDate(saleDate),
+        dealCycle: dealCycle,
+        dealCycleDays: leadDate && saleDate ? Math.floor((new Date(saleDate) - new Date(leadDate)) / (1000 * 60 * 60 * 24)) : null
+      };
+    } else {
+      return {
+        ...sale,
+        amount: parseFloat(sale.OPPORTUNITY || 0),
+        sourceId: 'UNKNOWN',
+        sourceName: 'Неизвестный источник',
+        linkMethod: contactId ? 'NO_LEADS_FOUND' : 'NO_CONTACT',
+        // ПОЛЯ ДЛЯ НЕИЗВЕСТНЫХ ИСТОЧНИКОВ
+        leadDate: null,
+        leadDateFormatted: "Лид не найден",
+        saleDate: sale.DATE_CREATE,
+        saleDateFormatted: formatDisplayDate(sale.DATE_CREATE),
+        dealCycle: "Нет данных",
+        dealCycleDays: null
+      };
+    }
+  });
+
+  // 5. БЫСТРАЯ СТАТИСТИКА + СТАТИСТИКА ПО ЦИКЛАМ
+  const linked = linkedSales.filter(s => s.sourceId !== 'UNKNOWN').length;
+  const successRate = sales.length > 0 ? Math.round((linked / sales.length) * 100) : 0;
+  
+  // Статистика по циклам сделок
+  const cyclesWithData = linkedSales.filter(s => s.dealCycleDays !== null);
+  const avgCycleDays = cyclesWithData.length > 0 
+    ? Math.round(cyclesWithData.reduce((sum, s) => sum + s.dealCycleDays, 0) / cyclesWithData.length)
+    : null;
+  
+  const minCycleDays = cyclesWithData.length > 0 
+    ? Math.min(...cyclesWithData.map(s => s.dealCycleDays))
+    : null;
+    
+  const maxCycleDays = cyclesWithData.length > 0 
+    ? Math.max(...cyclesWithData.map(s => s.dealCycleDays))
+    : null;
+  
+  console.log(`📊 ОПТИМИЗИРОВАННОЕ связывание завершено: ${linked}/${sales.length} (${successRate}%)`);
+  console.log(`⏱️ Средний цикл сделки: ${avgCycleDays} дней (мин: ${minCycleDays}, макс: ${maxCycleDays})`);
+  
+  return {
+    sales: linkedSales,
+    stats: {
+      successRate: successRate,
+      totalLinked: linked,
+      byMethod: { 'CONTACT_ID': linked },
+      // НОВАЯ СТАТИСТИКА ПО ЦИКЛАМ
+      dealCycleStats: {
+        avgDays: avgCycleDays,
+        minDays: minCycleDays,
+        maxDays: maxCycleDays,
+        salesWithCycleData: cyclesWithData.length
+      }
+    }
+  };
+}
+
+/**
+ * ОПТИМИЗИРОВАННАЯ ФУНКЦИЯ АНАЛИТИКИ ПРОДАЖ
+ * Вместо загрузки 1700+ лидов загружаем только нужные
+ */
+async function getSalesAnalytics(filters = {}) {
+  try {
+    console.log('💰 НАЧИНАЕМ ОПТИМИЗИРОВАННУЮ АНАЛИТИКУ ПРОДАЖ');
+
+    // 1. ПОЛУЧАЕМ ПРОДАЖИ (успешные сделки) ИЗ ВОРОНКИ "ДОГОВОР"
+    console.log('🔍 Запрос продаж: воронка 31, стадия C31:WON');
+    const salesDeals = await getDeals({
+      'CATEGORY_ID': '31',     // Воронка "Договор"
+      'STAGE_ID': 'C31:WON',  // Стадия "Внесена предоплата" = ПРОДАЖА
+      '>=DATE_CREATE': filters.startDate || '2025-06-01T00:00:00',
+      '<=DATE_CREATE': filters.endDate || '2025-06-11T23:59:59'
+    });
+
+    console.log(`💰 Найдено продаж: ${salesDeals ? salesDeals.length : 0}`);
+
+    if (!salesDeals || salesDeals.length === 0) {
+      return {
+        success: true,
+        data: [],
+        totals: { totalSales: 0, totalAmount: 0, averageAmount: 0 },
+        debug: { salesFound: 0, linkedSales: 0, unknownSales: 0 }
+      };
+    }
+
+    // 2. СОБИРАЕМ УНИКАЛЬНЫЕ CONTACT_ID ИЗ ПРОДАЖ
+    const uniqueContactIds = [...new Set(
+      salesDeals
+        .map(sale => sale.CONTACT_ID)
+        .filter(id => id && id !== '0')
+    )];
+    
+    console.log(`👥 Уникальных контактов в продажах: ${uniqueContactIds.length}`);
+
+    // 3. ЗАГРУЖАЕМ ТОЛЬКО ЛИДЫ ЭТИХ КОНТАКТОВ (НАМНОГО БЫСТРЕЕ!)
+    let contactLeads = [];
+    if (uniqueContactIds.length > 0) {
+      console.log('📋 Получаем лиды только для контактов с продажами...');
+      
+      // Запрашиваем лиды конкретных контактов
+      contactLeads = await getLeadsByContactIds(uniqueContactIds);
+      console.log(`📋 Найдено лидов для связывания: ${contactLeads.length}`);
+    }
+
+    // 4. СВЯЗЫВАЕМ ПРОДАЖИ С ИСТОЧНИКАМИ (БЫСТРО!)
+    const linkingResult = await linkSalesToSourcesOptimized(salesDeals, contactLeads);
+    const salesWithSources = linkingResult.sales;
+    const linkingStats = linkingResult.stats;
+
+    // 5. ГРУППИРУЕМ ПО ИСТОЧНИКАМ
+    const salesBySource = {};
+
+    salesWithSources.forEach(sale => {
+      const sourceId = sale.sourceId || 'UNKNOWN';
+
+      if (!salesBySource[sourceId]) {
+        salesBySource[sourceId] = {
+          sourceId: sourceId,
+          sourceName: sale.sourceName || 'Неизвестный источник',
+          sales: [],
+          totalSales: 0,
+          totalAmount: 0,
+          averageAmount: 0
+        };
+      }
+
+      salesBySource[sourceId].sales.push(sale);
+      salesBySource[sourceId].totalSales++;
+      salesBySource[sourceId].totalAmount += parseFloat(sale.amount || 0);
+    });
+
+    // 6. ВЫЧИСЛЯЕМ СРЕДНИЙ ЧЕК
+    Object.values(salesBySource).forEach(source => {
+      source.averageAmount = source.totalSales > 0 ? 
+        Math.round(source.totalAmount / source.totalSales) : 0;
+    });
+
+    // 7. СОРТИРУЕМ ПО КОЛИЧЕСТВУ ПРОДАЖ
+    const sortedSources = Object.values(salesBySource)
+      .sort((a, b) => b.totalSales - a.totalSales);
+
+    const totalAmount = salesWithSources.reduce((sum, sale) => sum + parseFloat(sale.amount || 0), 0);
+
+    console.log('💰 ОПТИМИЗИРОВАННАЯ АНАЛИТИКА ПРОДАЖ ЗАВЕРШЕНА');
+    console.log(`📊 Статистика связывания: ${linkingStats.successRate}%`);
+
+    return {
+      success: true,
+      data: sortedSources,
+      totals: {
+        totalSales: salesDeals.length,
+        totalAmount: Math.round(totalAmount),
+        averageAmount: salesDeals.length > 0 ? Math.round(totalAmount / salesDeals.length) : 0,
+        linkingSuccessRate: linkingStats.successRate
+      },
+      debug: {
+        salesFound: salesDeals.length,
+        uniqueContacts: uniqueContactIds.length,
+        leadsFound: contactLeads.length,
+        linkedSales: salesWithSources.filter(s => s.sourceId !== 'UNKNOWN').length,
+        unknownSales: salesWithSources.filter(s => s.sourceId === 'UNKNOWN').length,
+        linkingStats: linkingStats,
+        salesBreakdown: sortedSources.slice(0, 5).map(s => ({
+          source: s.sourceName,
+          sales: s.totalSales,
+          amount: s.totalAmount
+        }))
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Ошибка аналитики продаж:', error);
+    return {
+      success: false,
+      error: error.message,
+      data: []
+    };
+  }
+}
+
+
 // Экспорт ВСЕХ функций включая исправленную getLeads
 module.exports = {
   bitrixRequest,
@@ -700,8 +1069,14 @@ module.exports = {
   getDealsByLead,
   getDealsByContact,  
   getDeals,           // ← ТАКЖЕ ИСПРАВЛЕНА ПАГИНАЦИЯ
-  getDealCategories,  
+  //getDealCategories,  
   getCustomFields,
   enrichLeadsWithSourceNames,
-  getUsers
+  getUsers,
+  getSalesAnalytics,
+  //extractClientName,
+  //normalizeClientName,
+  //linkSalesToSources,
+  getLeadsByContactIds,
+  linkSalesToSourcesOptimized
 };
