@@ -1,7 +1,7 @@
 module.exports = {
   // 🔑 TELEGRAM BOT TOKEN (замените на ваш токен)
-  JWT_SECRET: 'ab_super_secret_key_2025',
-  BOT_TOKEN: '7938436710:AAH_aYM3W9qMrkmwKu-FiGo6SxwjF1nyKAI',
+  JWT_SECRET: '',
+  BOT_TOKEN: ':-',
   
   // 💬 CHAT IDs для отправки уведомлений
   CHAT_IDS: {
